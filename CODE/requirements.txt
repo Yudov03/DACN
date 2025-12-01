@@ -1,0 +1,32 @@
+# Core Dependencies
+openai-whisper==20231117
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# Text Embedding
+sentence-transformers>=2.2.2
+transformers>=4.30.0
+
+# Vector Database
+chromadb>=0.4.0
+faiss-cpu>=1.7.4
+
+# LLM Integration
+langchain>=0.1.0
+langchain-community>=0.0.10
+openai>=1.0.0
+
+# Audio Processing
+pydub>=0.25.1
+librosa>=0.10.0
+
+# Utilities
+numpy>=1.24.0
+pandas>=2.0.0
+tqdm>=4.65.0
+python-dotenv>=1.0.0
+
+# API & Web (for later phases)
+fastapi>=0.104.0
+uvicorn>=0.24.0
+requests>=2.31.0
