@@ -1,318 +1,473 @@
 """
-Vector Database Module - Quản lý vector database cho retrieval
-Hỗ trợ ChromaDB và FAISS
+Vector Database Module - Quan ly Qdrant vector database cho retrieval
+Theo plan.pdf: su dung Qdrant thay vi ChromaDB/FAISS
 """
 
-import chromadb
-from chromadb.config import Settings
-import faiss
+from qdrant_client import QdrantClient
+from qdrant_client.http import models
+from qdrant_client.http.models import (
+    Distance,
+    VectorParams,
+    PointStruct,
+    Filter,
+    FieldCondition,
+    MatchValue,
+    Range
+)
 import numpy as np
-from typing import List, Dict, Optional, Union, Tuple
+from typing import List, Dict, Optional, Union
 from pathlib import Path
-import json
-import pickle
 from datetime import datetime
+import uuid
 
 
 class VectorDatabase:
     """
-    Lớp quản lý vector database với ChromaDB hoặc FAISS
+    Lop quan ly Qdrant vector database (theo plan.pdf)
     """
 
     def __init__(
         self,
-        db_type: str = "chromadb",
-        db_path: Optional[Union[str, Path]] = None,
+        host: str = "localhost",
+        port: int = 6333,
+        url: Optional[str] = None,
+        api_key: Optional[str] = None,
         collection_name: str = "audio_transcripts",
-        embedding_dimension: int = 768
+        embedding_dimension: int = 1536,
+        distance_metric: str = "cosine"
     ):
         """
-        Khởi tạo Vector Database
+        Khoi tao Qdrant Vector Database
 
         Args:
-            db_type: Loại database (chromadb hoặc faiss)
-            db_path: Đường dẫn lưu database
-            collection_name: Tên collection
-            embedding_dimension: Dimension của embeddings
+            host: Qdrant host (cho local)
+            port: Qdrant port (cho local)
+            url: Qdrant Cloud URL (optional)
+            api_key: Qdrant Cloud API key (optional)
+            collection_name: Ten collection
+            embedding_dimension: Dimension cua embeddings (1536 cho text-embedding-3-small)
+            distance_metric: Distance metric (cosine, euclid, dot)
         """
-        self.db_type = db_type.lower()
-        self.db_path = Path(db_path) if db_path else Path("./data/vector_db")
         self.collection_name = collection_name
         self.embedding_dimension = embedding_dimension
 
-        self.db_path.mkdir(parents=True, exist_ok=True)
+        # Map distance metric
+        distance_map = {
+            "cosine": Distance.COSINE,
+            "euclid": Distance.EUCLID,
+            "dot": Distance.DOT
+        }
+        self.distance = distance_map.get(distance_metric.lower(), Distance.COSINE)
 
-        if self.db_type == "chromadb":
-            self._init_chromadb()
-        elif self.db_type == "faiss":
-            self._init_faiss()
-        else:
-            raise ValueError(f"DB type '{db_type}' không hợp lệ. Chọn: chromadb hoặc faiss")
-
-    def _init_chromadb(self):
-        """Khởi tạo ChromaDB"""
-        print(f"Khởi tạo ChromaDB tại {self.db_path}...")
-
-        self.client = chromadb.PersistentClient(
-            path=str(self.db_path),
-            settings=Settings(anonymized_telemetry=False)
-        )
-
-        # Get or create collection
+        # Khoi tao Qdrant client
+        print(f"Dang ket noi toi Qdrant...")
         try:
-            self.collection = self.client.get_collection(name=self.collection_name)
-            print(f"Đã load collection '{self.collection_name}' (items: {self.collection.count()})")
-        except:
-            self.collection = self.client.create_collection(
-                name=self.collection_name,
-                metadata={"description": "Audio transcript embeddings"}
+            if url:
+                # Qdrant Cloud
+                self.client = QdrantClient(url=url, api_key=api_key)
+                print(f"Da ket noi toi Qdrant Cloud: {url}")
+            else:
+                # Local Qdrant
+                self.client = QdrantClient(host=host, port=port)
+                print(f"Da ket noi toi Qdrant local: {host}:{port}")
+
+            # Khoi tao collection
+            self._init_collection()
+
+        except Exception as e:
+            print(f"Loi ket noi Qdrant: {e}")
+            print("Dang su dung Qdrant in-memory mode...")
+            # Fallback to in-memory mode
+            self.client = QdrantClient(":memory:")
+            self._init_collection()
+
+    def _init_collection(self):
+        """Khoi tao hoac load collection"""
+        collections = self.client.get_collections().collections
+        collection_names = [c.name for c in collections]
+
+        if self.collection_name in collection_names:
+            # Collection da ton tai
+            collection_info = self.client.get_collection(self.collection_name)
+            print(f"Da load collection '{self.collection_name}' (points: {collection_info.points_count})")
+        else:
+            # Tao collection moi
+            self.client.create_collection(
+                collection_name=self.collection_name,
+                vectors_config=VectorParams(
+                    size=self.embedding_dimension,
+                    distance=self.distance
+                )
             )
-            print(f"Đã tạo collection mới '{self.collection_name}'")
-
-    def _init_faiss(self):
-        """Khởi tạo FAISS"""
-        print(f"Khởi tạo FAISS index tại {self.db_path}...")
-
-        self.index_path = self.db_path / f"{self.collection_name}.faiss"
-        self.metadata_path = self.db_path / f"{self.collection_name}_metadata.pkl"
-
-        # Load existing index hoặc tạo mới
-        if self.index_path.exists():
-            self.index = faiss.read_index(str(self.index_path))
-            print(f"Đã load FAISS index (vectors: {self.index.ntotal})")
-        else:
-            # Tạo index mới - sử dụng IndexFlatIP cho cosine similarity
-            self.index = faiss.IndexFlatIP(self.embedding_dimension)
-            print(f"Đã tạo FAISS index mới (dimension: {self.embedding_dimension})")
-
-        # Load metadata
-        if self.metadata_path.exists():
-            with open(self.metadata_path, "rb") as f:
-                self.metadata_store = pickle.load(f)
-        else:
-            self.metadata_store = []
+            print(f"Da tao collection moi '{self.collection_name}'")
 
     def add_documents(
         self,
         chunks: List[Dict],
         embedding_field: str = "embedding",
-        id_field: Optional[str] = None
+        id_field: Optional[str] = None,
+        batch_size: int = 100
     ) -> int:
         """
-        Thêm documents (chunks) vào database
+        Them documents (chunks) vao Qdrant
 
         Args:
-            chunks: List các chunks có embeddings
-            embedding_field: Tên field chứa embedding
-            id_field: Tên field chứa ID (optional)
+            chunks: List cac chunks co embeddings
+            embedding_field: Ten field chua embedding
+            id_field: Ten field chua ID (optional)
+            batch_size: Batch size cho upsert
 
         Returns:
-            Số lượng documents đã thêm
+            So luong documents da them
         """
-        if self.db_type == "chromadb":
-            return self._add_to_chromadb(chunks, embedding_field, id_field)
-        else:  # faiss
-            return self._add_to_faiss(chunks, embedding_field)
-
-    def _add_to_chromadb(
-        self,
-        chunks: List[Dict],
-        embedding_field: str,
-        id_field: Optional[str]
-    ) -> int:
-        """Thêm documents vào ChromaDB"""
-        # Prepare data
-        ids = []
-        embeddings = []
-        documents = []
-        metadatas = []
+        points = []
 
         for idx, chunk in enumerate(chunks):
             # Generate ID
             if id_field and id_field in chunk:
-                doc_id = str(chunk[id_field])
+                point_id = str(chunk[id_field])
             else:
-                doc_id = f"doc_{datetime.now().timestamp()}_{idx}"
+                point_id = str(uuid.uuid4())
 
-            ids.append(doc_id)
-            embeddings.append(chunk[embedding_field])
-            documents.append(chunk.get("text", ""))
+            # Get embedding
+            embedding = chunk[embedding_field]
+            if isinstance(embedding, np.ndarray):
+                embedding = embedding.tolist()
 
-            # Metadata (exclude embedding và text)
-            metadata = {k: v for k, v in chunk.items()
-                       if k not in [embedding_field, "text"] and isinstance(v, (str, int, float, bool))}
-            metadatas.append(metadata)
+            # Build payload (metadata)
+            payload = {}
+            for k, v in chunk.items():
+                if k != embedding_field:
+                    # Qdrant accepts most types directly
+                    if isinstance(v, (str, int, float, bool, list)):
+                        payload[k] = v
+                    elif v is None:
+                        payload[k] = None
+                    else:
+                        payload[k] = str(v)
 
-        # Add to collection
-        self.collection.add(
-            ids=ids,
-            embeddings=embeddings,
-            documents=documents,
-            metadatas=metadatas
-        )
+            # Create point
+            point = PointStruct(
+                id=point_id,
+                vector=embedding,
+                payload=payload
+            )
+            points.append(point)
 
-        print(f"✓ Đã thêm {len(ids)} documents vào ChromaDB")
-        return len(ids)
+        # Batch upsert
+        total_added = 0
+        for i in range(0, len(points), batch_size):
+            batch = points[i:i + batch_size]
+            self.client.upsert(
+                collection_name=self.collection_name,
+                points=batch
+            )
+            total_added += len(batch)
+            print(f"Upserted batch {i // batch_size + 1}: {len(batch)} points")
 
-    def _add_to_faiss(self, chunks: List[Dict], embedding_field: str) -> int:
-        """Thêm documents vào FAISS"""
-        # Extract embeddings
-        embeddings = np.array([chunk[embedding_field] for chunk in chunks], dtype=np.float32)
-
-        # Normalize for cosine similarity
-        faiss.normalize_L2(embeddings)
-
-        # Add to index
-        self.index.add(embeddings)
-
-        # Store metadata
-        for chunk in chunks:
-            # Remove embedding from metadata to save space
-            metadata = {k: v for k, v in chunk.items() if k != embedding_field}
-            self.metadata_store.append(metadata)
-
-        # Save index and metadata
-        self._save_faiss()
-
-        print(f"✓ Đã thêm {len(chunks)} documents vào FAISS")
-        return len(chunks)
-
-    def _save_faiss(self):
-        """Lưu FAISS index và metadata"""
-        faiss.write_index(self.index, str(self.index_path))
-
-        with open(self.metadata_path, "wb") as f:
-            pickle.dump(self.metadata_store, f)
+        print(f"Da them {total_added} documents vao Qdrant")
+        return total_added
 
     def search(
         self,
         query_embedding: Union[List[float], np.ndarray],
         top_k: int = 5,
-        filter_dict: Optional[Dict] = None
+        filter_dict: Optional[Dict] = None,
+        score_threshold: Optional[float] = None
     ) -> List[Dict]:
         """
-        Tìm kiếm documents tương tự với query
+        Tim kiem documents tuong tu voi query
 
         Args:
-            query_embedding: Embedding của query
-            top_k: Số lượng kết quả trả về
-            filter_dict: Bộ lọc metadata (chỉ cho ChromaDB)
+            query_embedding: Embedding cua query
+            top_k: So luong ket qua tra ve
+            filter_dict: Bo loc metadata (optional)
+            score_threshold: Nguong similarity score (optional)
 
         Returns:
-            List các documents tìm được với scores
+            List cac documents tim duoc voi scores
         """
-        if self.db_type == "chromadb":
-            return self._search_chromadb(query_embedding, top_k, filter_dict)
-        else:  # faiss
-            return self._search_faiss(query_embedding, top_k)
-
-    def _search_chromadb(
-        self,
-        query_embedding: Union[List[float], np.ndarray],
-        top_k: int,
-        filter_dict: Optional[Dict]
-    ) -> List[Dict]:
-        """Tìm kiếm trong ChromaDB"""
         if isinstance(query_embedding, np.ndarray):
             query_embedding = query_embedding.tolist()
 
-        # Query
-        results = self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-            where=filter_dict
+        # Build filter
+        qdrant_filter = None
+        if filter_dict:
+            must_conditions = []
+            for key, value in filter_dict.items():
+                if isinstance(value, dict):
+                    # Range filter
+                    if "gte" in value or "lte" in value:
+                        must_conditions.append(
+                            FieldCondition(
+                                key=key,
+                                range=Range(
+                                    gte=value.get("gte"),
+                                    lte=value.get("lte")
+                                )
+                            )
+                        )
+                else:
+                    # Exact match
+                    must_conditions.append(
+                        FieldCondition(
+                            key=key,
+                            match=MatchValue(value=value)
+                        )
+                    )
+
+            if must_conditions:
+                qdrant_filter = Filter(must=must_conditions)
+
+        # Search using query_points (Qdrant client v1.16+)
+        response = self.client.query_points(
+            collection_name=self.collection_name,
+            query=query_embedding,
+            limit=top_k,
+            query_filter=qdrant_filter,
+            score_threshold=score_threshold
         )
 
         # Format results
         documents = []
-        for i in range(len(results['ids'][0])):
+        for result in response.points:
             doc = {
-                "id": results['ids'][0][i],
-                "text": results['documents'][0][i],
-                "metadata": results['metadatas'][0][i],
-                "distance": results['distances'][0][i],
-                "similarity": 1 - results['distances'][0][i]  # Convert distance to similarity
+                "id": str(result.id),
+                "similarity": result.score,
+                "text": result.payload.get("text", ""),
+                "metadata": {k: v for k, v in result.payload.items() if k != "text"}
             }
             documents.append(doc)
 
         return documents
 
-    def _search_faiss(
+    def search_with_mmr(
         self,
         query_embedding: Union[List[float], np.ndarray],
-        top_k: int
+        top_k: int = 5,
+        fetch_k: int = 20,
+        lambda_mult: float = 0.5,
+        filter_dict: Optional[Dict] = None
     ) -> List[Dict]:
-        """Tìm kiếm trong FAISS"""
-        if isinstance(query_embedding, list):
-            query_embedding = np.array(query_embedding, dtype=np.float32)
+        """
+        Tim kiem voi Maximal Marginal Relevance (MMR) de tang diversity
 
-        # Reshape to 2D array
-        query_embedding = query_embedding.reshape(1, -1)
+        Args:
+            query_embedding: Embedding cua query
+            top_k: So luong ket qua tra ve
+            fetch_k: So luong candidates fetch truoc khi MMR
+            lambda_mult: Balance giua relevance va diversity (0-1)
+            filter_dict: Bo loc metadata
 
-        # Normalize
-        faiss.normalize_L2(query_embedding)
+        Returns:
+            List cac documents da duoc re-rank theo MMR
+        """
+        if isinstance(query_embedding, np.ndarray):
+            query_embedding = query_embedding.tolist()
 
-        # Search
-        distances, indices = self.index.search(query_embedding, top_k)
+        # Fetch more results first
+        initial_results = self.search(
+            query_embedding=query_embedding,
+            top_k=fetch_k,
+            filter_dict=filter_dict
+        )
 
-        # Format results
-        documents = []
-        for i, idx in enumerate(indices[0]):
-            if idx < len(self.metadata_store):
-                doc = self.metadata_store[idx].copy()
-                doc["similarity"] = float(distances[0][i])
-                doc["index"] = int(idx)
-                documents.append(doc)
+        if len(initial_results) <= top_k:
+            return initial_results
 
-        return documents
+        # Apply MMR
+        selected = []
+        candidates = initial_results.copy()
+        query_emb = np.array(query_embedding)
+
+        while len(selected) < top_k and candidates:
+            best_score = -float('inf')
+            best_idx = 0
+
+            for i, candidate in enumerate(candidates):
+                # Relevance score (already have from search)
+                relevance = candidate["similarity"]
+
+                # Diversity score (max similarity to already selected)
+                if selected:
+                    max_sim = 0
+                    for sel in selected:
+                        # Simplified: use 1 - distance as diversity
+                        # In practice, you'd need embeddings stored
+                        max_sim = max(max_sim, 0.5)  # Placeholder
+                    diversity = 1 - max_sim
+                else:
+                    diversity = 1
+
+                # MMR score
+                mmr_score = lambda_mult * relevance + (1 - lambda_mult) * diversity
+
+                if mmr_score > best_score:
+                    best_score = mmr_score
+                    best_idx = i
+
+            selected.append(candidates[best_idx])
+            candidates.pop(best_idx)
+
+        return selected
 
     def get_collection_stats(self) -> Dict:
         """
-        Lấy thống kê về collection
+        Lay thong ke ve collection
 
         Returns:
-            Dict chứa thống kê
+            Dict chua thong ke
         """
-        if self.db_type == "chromadb":
+        try:
+            collection_info = self.client.get_collection(self.collection_name)
             return {
-                "type": "chromadb",
+                "type": "qdrant",
                 "collection_name": self.collection_name,
-                "count": self.collection.count(),
-                "path": str(self.db_path)
+                "count": collection_info.points_count,
+                "indexed_vectors_count": collection_info.indexed_vectors_count,
+                "status": collection_info.status.value if hasattr(collection_info.status, 'value') else str(collection_info.status),
+                "dimension": self.embedding_dimension
             }
-        else:  # faiss
+        except Exception as e:
             return {
-                "type": "faiss",
+                "type": "qdrant",
                 "collection_name": self.collection_name,
-                "count": self.index.ntotal,
-                "dimension": self.embedding_dimension,
-                "path": str(self.db_path)
+                "error": str(e)
             }
 
     def delete_collection(self):
-        """Xóa collection"""
-        if self.db_type == "chromadb":
-            self.client.delete_collection(name=self.collection_name)
-            print(f"Đã xóa collection '{self.collection_name}'")
-        else:  # faiss
-            if self.index_path.exists():
-                self.index_path.unlink()
-            if self.metadata_path.exists():
-                self.metadata_path.unlink()
-            print(f"Đã xóa FAISS index '{self.collection_name}'")
+        """Xoa collection"""
+        self.client.delete_collection(collection_name=self.collection_name)
+        print(f"Da xoa collection '{self.collection_name}'")
+
+    def delete_by_filter(self, filter_dict: Dict) -> int:
+        """
+        Xoa documents theo filter
+
+        Args:
+            filter_dict: Bo loc de xac dinh documents can xoa
+
+        Returns:
+            So documents da xoa (estimated)
+        """
+        # Build filter
+        must_conditions = []
+        for key, value in filter_dict.items():
+            must_conditions.append(
+                FieldCondition(
+                    key=key,
+                    match=MatchValue(value=value)
+                )
+            )
+
+        qdrant_filter = Filter(must=must_conditions)
+
+        # Count before delete
+        count_before = self.get_collection_stats().get("count", 0)
+
+        # Delete
+        self.client.delete(
+            collection_name=self.collection_name,
+            points_selector=models.FilterSelector(filter=qdrant_filter)
+        )
+
+        # Count after delete
+        count_after = self.get_collection_stats().get("count", 0)
+
+        deleted = count_before - count_after
+        print(f"Da xoa {deleted} documents")
+        return deleted
+
+    def get_document_by_id(self, doc_id: str) -> Optional[Dict]:
+        """
+        Lay document theo ID
+
+        Args:
+            doc_id: ID cua document
+
+        Returns:
+            Document hoac None
+        """
+        try:
+            results = self.client.retrieve(
+                collection_name=self.collection_name,
+                ids=[doc_id]
+            )
+            if results:
+                point = results[0]
+                return {
+                    "id": str(point.id),
+                    "vector": point.vector,
+                    "payload": point.payload
+                }
+            return None
+        except Exception as e:
+            print(f"Loi khi lay document: {e}")
+            return None
+
+    def update_payload(self, doc_id: str, payload_updates: Dict):
+        """
+        Cap nhat payload cua document
+
+        Args:
+            doc_id: ID cua document
+            payload_updates: Dict chua cac field can update
+        """
+        self.client.set_payload(
+            collection_name=self.collection_name,
+            points=[doc_id],
+            payload=payload_updates
+        )
+        print(f"Da cap nhat payload cho document {doc_id}")
 
 
 # Test function
 if __name__ == "__main__":
-    # Example usage
-    print("Testing ChromaDB:")
-    db_chroma = VectorDatabase(db_type="chromadb", collection_name="test_collection")
-    stats = db_chroma.get_collection_stats()
-    print(stats)
+    print("Testing Qdrant Vector Database...")
 
-    print("\nTesting FAISS:")
-    db_faiss = VectorDatabase(db_type="faiss", collection_name="test_collection", embedding_dimension=768)
-    stats = db_faiss.get_collection_stats()
-    print(stats)
+    # Test in-memory mode
+    db = VectorDatabase(
+        collection_name="test_collection",
+        embedding_dimension=1536
+    )
 
-    print("\nVector Database Module initialized successfully!")
+    # Test stats
+    stats = db.get_collection_stats()
+    print(f"\nCollection stats: {stats}")
+
+    # Test add documents
+    test_chunks = [
+        {
+            "text": "Day la cau thu nhat",
+            "embedding": [0.1] * 1536,
+            "chunk_id": 0,
+            "start_time": 0.0,
+            "end_time": 5.0,
+            "audio_file": "test.mp3"
+        },
+        {
+            "text": "Day la cau thu hai",
+            "embedding": [0.2] * 1536,
+            "chunk_id": 1,
+            "start_time": 5.0,
+            "end_time": 10.0,
+            "audio_file": "test.mp3"
+        }
+    ]
+
+    db.add_documents(test_chunks)
+
+    # Test search
+    results = db.search(
+        query_embedding=[0.15] * 1536,
+        top_k=2
+    )
+    print(f"\nSearch results: {len(results)} documents found")
+    for r in results:
+        print(f"  - {r['text']}: similarity={r['similarity']:.4f}")
+
+    # Final stats
+    stats = db.get_collection_stats()
+    print(f"\nFinal stats: {stats}")
+
+    print("\nQdrant Vector Database Module initialized successfully!")

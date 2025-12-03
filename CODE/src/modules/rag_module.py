@@ -1,156 +1,224 @@
 """
 RAG Module - Retrieval-Augmented Generation
-Kết hợp retrieval với LLM để trả lời câu hỏi dựa trên audio transcripts
+Ho tro ca OpenAI va Google LLM thong qua LangChain
 """
 
 from typing import List, Dict, Optional, Union
 from pathlib import Path
-from openai import OpenAI
 from datetime import datetime
 import json
 import os
 
+from langchain_core.prompts import PromptTemplate
+from langchain_core.documents import Document
+
 
 class RAGSystem:
     """
-    Hệ thống RAG kết hợp retrieval và LLM
+    He thong RAG ho tro ca OpenAI va Google LLM
+    - OpenAI: gpt-4, gpt-4o, gpt-4o-mini
+    - Google: gemini-1.5-flash, gemini-1.5-pro, gemini-2.0-flash
     """
 
     def __init__(
         self,
         vector_db,
         embedder,
-        llm_model: str = "gpt-3.5-turbo",
+        llm_model: Optional[str] = None,
+        provider: str = "google",  # "openai" or "google"
         api_key: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: int = 500,
         top_k: int = 5
     ):
         """
-        Khởi tạo RAG System
+        Khoi tao RAG System
 
         Args:
-            vector_db: VectorDatabase instance
+            vector_db: VectorDatabase instance (Qdrant)
             embedder: TextEmbedding instance
-            llm_model: Tên model LLM
-            api_key: OpenAI API key
+            llm_model: Ten model LLM (neu None se dung default theo provider)
+            provider: "openai" hoac "google"
+            api_key: API key (neu khong truyen se lay tu env)
             temperature: Temperature cho LLM
             max_tokens: Max tokens cho response
-            top_k: Số lượng chunks retrieve
+            top_k: So luong chunks retrieve
         """
         self.vector_db = vector_db
         self.embedder = embedder
-        self.llm_model = llm_model
+        self.provider = provider.lower()
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.top_k = top_k
 
-        # Setup OpenAI client
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
-        if self.api_key:
-            self.client = OpenAI(api_key=self.api_key)
+        # Default models
+        if llm_model is None:
+            if self.provider == "google":
+                llm_model = "gemini-2.0-flash"
+            else:
+                llm_model = "gpt-4o-mini"
+
+        self.llm_model = llm_model
+
+        # Get API key
+        if api_key:
+            self.api_key = api_key
+        elif self.provider == "google":
+            self.api_key = os.getenv("GOOGLE_API_KEY")
         else:
-            self.client = None
-            print("WARNING: OpenAI API key chưa được cấu hình!")
+            self.api_key = os.getenv("OPENAI_API_KEY")
 
-        self.prompt_template = """Bạn là một trợ lý AI thông minh. Dựa trên các đoạn văn bản sau đây được trích xuất từ âm thanh, hãy trả lời câu hỏi của người dùng một cách chính xác và chi tiết.
+        if not self.api_key:
+            key_name = "GOOGLE_API_KEY" if self.provider == "google" else "OPENAI_API_KEY"
+            raise ValueError(f"{key_name} chua duoc cau hinh!")
 
-Các đoạn văn bản liên quan:
+        # Initialize LLM
+        self._init_llm()
+
+        # Setup prompt template
+        self.prompt_template = self._get_default_prompt_template()
+
+        print(f"Da khoi tao RAG System - Provider: {self.provider}, Model: {self.llm_model}")
+
+    def _init_llm(self):
+        """Initialize LLM based on provider"""
+        print(f"Dang khoi tao {self.provider.upper()} LLM '{self.llm_model}'...")
+
+        if self.provider == "google":
+            from langchain_google_genai import ChatGoogleGenerativeAI
+
+            self.llm = ChatGoogleGenerativeAI(
+                model=self.llm_model,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                google_api_key=self.api_key
+            )
+        else:  # openai
+            from langchain_openai import ChatOpenAI
+
+            self.llm = ChatOpenAI(
+                model=self.llm_model,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                openai_api_key=self.api_key
+            )
+
+    def _get_default_prompt_template(self) -> PromptTemplate:
+        """Tao prompt template mac dinh"""
+        template = """Ban la mot tro ly AI thong minh. Dua tren cac doan van ban sau day duoc trich xuat tu am thanh, hay tra loi cau hoi cua nguoi dung mot cach chinh xac va chi tiet.
+
+Cac doan van ban lien quan (kem timestamp):
 {context}
 
-Câu hỏi: {question}
+Cau hoi: {question}
 
-Hãy trả lời câu hỏi dựa trên thông tin được cung cấp. Nếu thông tin không đủ để trả lời, hãy nói rõ điều đó. Nếu có thông tin về thời gian (timestamp) trong audio, hãy đề cập đến nó.
+Yeu cau:
+1. Tra loi dua tren thong tin duoc cung cap
+2. Neu thong tin khong du de tra loi, hay noi ro "Toi khong tim thay thong tin lien quan"
+3. Trich dan nguon voi format [file_id:start_time-end_time] khi co the
+4. Tra loi ngan gon, chinh xac
 
-Trả lời:"""
+Tra loi:"""
+
+        return PromptTemplate(
+            template=template,
+            input_variables=["context", "question"]
+        )
 
     def query(
         self,
         question: str,
         top_k: Optional[int] = None,
         return_sources: bool = True,
-        filter_dict: Optional[Dict] = None
+        filter_dict: Optional[Dict] = None,
+        use_mmr: bool = False
     ) -> Dict:
         """
-        Thực hiện query với RAG pipeline
+        Thuc hien query voi RAG pipeline
 
         Args:
-            question: Câu hỏi của người dùng
-            top_k: Số lượng chunks retrieve (override default)
-            return_sources: Có trả về sources không
-            filter_dict: Bộ lọc cho retrieval
+            question: Cau hoi cua nguoi dung
+            top_k: So luong chunks retrieve (override default)
+            return_sources: Co tra ve sources khong
+            filter_dict: Bo loc cho retrieval
+            use_mmr: Su dung MMR de tang diversity
 
         Returns:
-            Dict chứa answer, sources và metadata
+            Dict chua answer, sources va metadata
         """
         k = top_k or self.top_k
 
-        # Step 1: Tạo embedding cho query
-        query_embedding = self.embedder.encode_text(question, show_progress=False)
+        # Step 1: Tao embedding cho query
+        query_embedding = self.embedder.encode_query(question)
 
         # Step 2: Retrieve relevant chunks
-        retrieved_chunks = self.vector_db.search(
-            query_embedding=query_embedding,
-            top_k=k,
-            filter_dict=filter_dict
-        )
+        if use_mmr:
+            retrieved_chunks = self.vector_db.search_with_mmr(
+                query_embedding=query_embedding,
+                top_k=k,
+                filter_dict=filter_dict
+            )
+        else:
+            retrieved_chunks = self.vector_db.search(
+                query_embedding=query_embedding,
+                top_k=k,
+                filter_dict=filter_dict
+            )
 
         if not retrieved_chunks:
             return {
-                "answer": "Xin lỗi, tôi không tìm thấy thông tin liên quan để trả lời câu hỏi này.",
+                "answer": "Toi khong tim thay thong tin lien quan de tra loi cau hoi nay.",
                 "sources": [],
                 "question": question,
                 "timestamp": datetime.now().isoformat()
             }
 
-        # Step 3: Tạo context từ retrieved chunks
+        # Step 3: Format context tu retrieved chunks
         context = self._format_context(retrieved_chunks)
 
-        # Step 4: Tạo prompt
+        # Step 4: Tao prompt
         prompt = self.prompt_template.format(
             context=context,
             question=question
         )
 
-        # Step 5: Gọi LLM
+        # Step 5: Goi LLM
         try:
-            answer = self._call_llm(prompt)
+            response = self.llm.invoke(prompt)
+            answer = response.content.strip()
         except Exception as e:
-            print(f"Lỗi khi gọi LLM: {str(e)}")
-            answer = f"Xin lỗi, đã có lỗi xảy ra khi xử lý câu hỏi: {str(e)}"
+            print(f"Loi khi goi LLM: {str(e)}")
+            answer = f"Xin loi, da co loi xay ra khi xu ly cau hoi: {str(e)}"
 
         # Step 6: Format response
-        response = {
+        response_data = {
             "answer": answer,
             "question": question,
             "timestamp": datetime.now().isoformat(),
-            "num_sources": len(retrieved_chunks)
+            "num_sources": len(retrieved_chunks),
+            "model": self.llm_model,
+            "provider": self.provider
         }
 
         if return_sources:
-            response["sources"] = self._format_sources(retrieved_chunks)
+            response_data["sources"] = self._format_sources(retrieved_chunks)
 
-        return response
+        return response_data
 
     def _format_context(self, chunks: List[Dict]) -> str:
-        """
-        Format các chunks thành context cho LLM
-
-        Args:
-            chunks: List các retrieved chunks
-
-        Returns:
-            Context string
-        """
+        """Format cac chunks thanh context cho LLM"""
         context_parts = []
 
         for i, chunk in enumerate(chunks, 1):
             text = chunk.get("text", "")
-
-            # Thêm timestamp info nếu có
             metadata = chunk.get("metadata", {})
-            if "start_time" in metadata and "end_time" in metadata:
-                time_info = f"[Thời gian: {self._format_timestamp(metadata['start_time'])} - {self._format_timestamp(metadata['end_time'])}]"
+
+            start_time = metadata.get("start_time")
+            end_time = metadata.get("end_time")
+            audio_file = metadata.get("audio_file", "")
+
+            if start_time is not None and end_time is not None:
+                time_info = f"[{audio_file}:{self._format_timestamp(start_time)}-{self._format_timestamp(end_time)}]"
                 context_parts.append(f"{i}. {time_info}\n{text}\n")
             else:
                 context_parts.append(f"{i}. {text}\n")
@@ -158,96 +226,54 @@ Trả lời:"""
         return "\n".join(context_parts)
 
     def _format_sources(self, chunks: List[Dict]) -> List[Dict]:
-        """
-        Format sources để trả về cho user
-
-        Args:
-            chunks: List các retrieved chunks
-
-        Returns:
-            List sources đã format
-        """
+        """Format sources de tra ve cho user"""
         sources = []
 
         for chunk in chunks:
+            metadata = chunk.get("metadata", {})
+
             source = {
                 "text": chunk.get("text", ""),
-                "similarity": chunk.get("similarity", 0.0)
+                "similarity": chunk.get("similarity", 0.0),
+                "audio_file": metadata.get("audio_file", ""),
+                "start_time": metadata.get("start_time"),
+                "end_time": metadata.get("end_time"),
+                "chunk_id": metadata.get("chunk_id")
             }
 
-            # Thêm metadata
-            metadata = chunk.get("metadata", {})
-            if metadata:
-                source["audio_file"] = metadata.get("audio_file", "")
-                source["start_time"] = metadata.get("start_time")
-                source["end_time"] = metadata.get("end_time")
-
-                # Format timestamps
-                if source["start_time"] is not None:
-                    source["start_time_formatted"] = self._format_timestamp(source["start_time"])
-                if source["end_time"] is not None:
-                    source["end_time_formatted"] = self._format_timestamp(source["end_time"])
+            if source["start_time"] is not None:
+                source["start_time_formatted"] = self._format_timestamp(source["start_time"])
+            if source["end_time"] is not None:
+                source["end_time_formatted"] = self._format_timestamp(source["end_time"])
 
             sources.append(source)
 
         return sources
 
-    def _call_llm(self, prompt: str) -> str:
-        """
-        Gọi LLM để sinh câu trả lời
-
-        Args:
-            prompt: Prompt cho LLM
-
-        Returns:
-            Câu trả lời từ LLM
-        """
-        if not self.client:
-            raise ValueError("OpenAI client chưa được khởi tạo. Vui lòng cung cấp API key.")
-
-        response = self.client.chat.completions.create(
-            model=self.llm_model,
-            messages=[
-                {"role": "system", "content": "Bạn là một trợ lý AI thông minh và hữu ích."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=self.temperature,
-            max_tokens=self.max_tokens
-        )
-
-        answer = response.choices[0].message.content.strip()
-        return answer
-
     def _format_timestamp(self, seconds: float) -> str:
-        """
-        Format timestamp từ giây sang HH:MM:SS
-
-        Args:
-            seconds: Số giây
-
-        Returns:
-            Timestamp formatted
-        """
+        """Format timestamp tu giay sang HH:MM:SS"""
+        if seconds is None:
+            return "00:00:00"
         hours = int(seconds // 3600)
         minutes = int((seconds % 3600) // 60)
         secs = seconds % 60
         return f"{hours:02d}:{minutes:02d}:{secs:05.2f}"
+
+    def query_with_chain(
+        self,
+        question: str,
+        top_k: Optional[int] = None
+    ) -> Dict:
+        """Query su dung LangChain chain"""
+        k = top_k or self.top_k
+        return self.query(question, top_k=k)
 
     def batch_query(
         self,
         questions: List[str],
         top_k: Optional[int] = None
     ) -> List[Dict]:
-        """
-        Xử lý nhiều queries cùng lúc
-
-        Args:
-            questions: List các câu hỏi
-            top_k: Số lượng chunks retrieve
-
-        Returns:
-            List các responses
-        """
+        """Xu ly nhieu queries cung luc"""
         responses = []
 
         for question in questions:
@@ -262,16 +288,7 @@ Trả lời:"""
         responses: Union[Dict, List[Dict]],
         output_path: Union[str, Path]
     ) -> Path:
-        """
-        Lưu conversation ra file
-
-        Args:
-            responses: Response hoặc list responses
-            output_path: Đường dẫn file output
-
-        Returns:
-            Path của file đã lưu
-        """
+        """Luu conversation ra file"""
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -281,43 +298,44 @@ Trả lời:"""
         conversation_data = {
             "timestamp": datetime.now().isoformat(),
             "llm_model": self.llm_model,
+            "provider": self.provider,
             "conversations": responses
         }
 
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(conversation_data, f, ensure_ascii=False, indent=2)
 
-        print(f"Đã lưu conversation tại: {output_path}")
+        print(f"Da luu conversation tai: {output_path}")
         return output_path
 
     def set_prompt_template(self, template: str):
-        """
-        Cập nhật prompt template
-
-        Args:
-            template: Template mới (phải có {context} và {question})
-        """
+        """Cap nhat prompt template"""
         if "{context}" not in template or "{question}" not in template:
-            raise ValueError("Template phải chứa {context} và {question}")
+            raise ValueError("Template phai chua {context} va {question}")
 
-        self.prompt_template = template
-        print("Đã cập nhật prompt template")
+        self.prompt_template = PromptTemplate(
+            template=template,
+            input_variables=["context", "question"]
+        )
+        print("Da cap nhat prompt template")
+
+    def get_retriever_stats(self) -> Dict:
+        """Lay thong ke ve retriever"""
+        return {
+            "llm_model": self.llm_model,
+            "llm_provider": self.provider,
+            "embedding_model": self.embedder.model_name,
+            "embedding_provider": self.embedder.provider,
+            "top_k": self.top_k,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens
+        }
 
 
 # Test function
 if __name__ == "__main__":
-    # Example usage (requires proper setup)
     print("RAG Module initialized successfully!")
-    print("Note: Cần setup VectorDB, Embedder và OpenAI API key để test đầy đủ")
-
-    # Example template
-    custom_template = """Bạn là chuyên gia phân tích audio.
-
-Context:
-{context}
-
-Question: {question}
-
-Answer:"""
-
-    print(f"\nExample custom template:\n{custom_template}")
+    print("Supported providers: openai, google")
+    print("\nOpenAI models: gpt-4, gpt-4o, gpt-4o-mini")
+    print("Google models: gemini-1.5-flash, gemini-1.5-pro, gemini-2.0-flash")
+    print("\nNote: Can setup VectorDB, Embedder va API key de test day du")

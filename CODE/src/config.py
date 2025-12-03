@@ -1,6 +1,6 @@
 """
-Cấu hình hệ thống - Configuration Module
-Chứa các cấu hình cho toàn bộ hệ thống IR đa phương thức
+Cau hinh he thong - Configuration Module
+Chua cac cau hinh cho toan bo he thong IR da phuong thuc
 """
 
 import os
@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Config:
-    """Cấu hình chính của hệ thống"""
+    """Cau hinh chinh cua he thong"""
 
     # ========================
     # Project Paths
@@ -27,79 +27,148 @@ class Config:
     # API Keys
     # ========================
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
+
+    # ========================
+    # Provider Selection (openai or google)
+    # ========================
+    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "google")  # openai or google
+    EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "google")  # openai or google
+
+    # ========================
+    # Qdrant Configuration
+    # ========================
+    QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
+    QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
+    QDRANT_URL = os.getenv("QDRANT_URL", None)  # For Qdrant Cloud
+    QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", None)  # For Qdrant Cloud
+    COLLECTION_NAME = os.getenv("COLLECTION_NAME", "audio_transcripts")
 
     # ========================
     # Model Configurations
     # ========================
     # Whisper ASR Model
     WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")  # tiny, base, small, medium, large
-    WHISPER_DEVICE = "cuda"  # or "cpu"
+    WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "cuda")  # or "cpu"
 
-    # Text Embedding Model
-    EMBEDDING_MODEL = os.getenv(
-        "EMBEDDING_MODEL",
-        "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
-    )
-    EMBEDDING_DIMENSION = 768  # Dimension cho model trên
+    # OpenAI Models
+    OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+    OPENAI_EMBEDDING_DIMENSION = int(os.getenv("OPENAI_EMBEDDING_DIMENSION", "1536"))
+    OPENAI_LLM_MODEL = os.getenv("OPENAI_LLM_MODEL", "gpt-4o-mini")
 
-    # LLM Model
-    LLM_MODEL = os.getenv("LLM_MODEL", "gpt-3.5-turbo")
-    LLM_TEMPERATURE = 0.7
-    LLM_MAX_TOKENS = 500
+    # Google Models
+    GOOGLE_EMBEDDING_MODEL = os.getenv("GOOGLE_EMBEDDING_MODEL", "models/text-embedding-004")
+    GOOGLE_EMBEDDING_DIMENSION = int(os.getenv("GOOGLE_EMBEDDING_DIMENSION", "768"))
+    GOOGLE_LLM_MODEL = os.getenv("GOOGLE_LLM_MODEL", "gemini-2.0-flash")
+
+    # Active model (based on provider)
+    @classmethod
+    def get_embedding_model(cls):
+        if cls.EMBEDDING_PROVIDER == "google":
+            return cls.GOOGLE_EMBEDDING_MODEL
+        return cls.OPENAI_EMBEDDING_MODEL
+
+    @classmethod
+    def get_embedding_dimension(cls):
+        if cls.EMBEDDING_PROVIDER == "google":
+            return cls.GOOGLE_EMBEDDING_DIMENSION
+        return cls.OPENAI_EMBEDDING_DIMENSION
+
+    @classmethod
+    def get_llm_model(cls):
+        if cls.LLM_PROVIDER == "google":
+            return cls.GOOGLE_LLM_MODEL
+        return cls.OPENAI_LLM_MODEL
+
+    @classmethod
+    def get_api_key(cls, provider=None):
+        """Get API key for specified or default provider"""
+        if provider == "google" or (provider is None and cls.LLM_PROVIDER == "google"):
+            return cls.GOOGLE_API_KEY
+        return cls.OPENAI_API_KEY
+
+    # Legacy support
+    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+    EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", "768"))  # Default to Google dimension
+    LLM_MODEL = os.getenv("LLM_MODEL", "gemini-2.0-flash")  # Default to Google model
+    LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.7"))
+    LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "500"))
 
     # ========================
     # Chunking Parameters
     # ========================
-    CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "500"))  # số ký tự
-    CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "50"))  # số ký tự overlap
-    CHUNKING_METHOD = "semantic"  # "fixed", "semantic", "sentence"
+    CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "500"))  # so ky tu
+    CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "50"))  # so ky tu overlap
+    CHUNKING_METHOD = os.getenv("CHUNKING_METHOD", "semantic")  # "fixed", "semantic", "sentence"
 
-    # ========================
-    # Vector Database Parameters
-    # ========================
-    VECTOR_DB_TYPE = "chromadb"  # "chromadb" or "faiss"
-    COLLECTION_NAME = "audio_transcripts"
+    # Semantic chunking parameters
+    SEMANTIC_THRESHOLD = float(os.getenv("SEMANTIC_THRESHOLD", "0.65"))
+    SEMANTIC_WINDOW_SIZE = int(os.getenv("SEMANTIC_WINDOW_SIZE", "5"))
 
     # ========================
     # Retrieval Parameters
     # ========================
-    TOP_K = int(os.getenv("TOP_K", "5"))  # Số lượng chunks retrieve
-    SIMILARITY_THRESHOLD = 0.5  # Ngưỡng similarity score
+    TOP_K = int(os.getenv("TOP_K", "5"))  # So luong chunks retrieve
+    SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.5"))  # Nguong similarity score
+
+    # MMR (Maximal Marginal Relevance) parameters
+    MMR_LAMBDA = float(os.getenv("MMR_LAMBDA", "0.5"))  # Balance between relevance and diversity
 
     # ========================
     # RAG Parameters
     # ========================
-    RAG_PROMPT_TEMPLATE = """Bạn là một trợ lý AI thông minh. Dựa trên các đoạn văn bản sau đây được trích xuất từ âm thanh, hãy trả lời câu hỏi của người dùng một cách chính xác và chi tiết.
+    RAG_PROMPT_TEMPLATE = """Ban la mot tro ly AI thong minh. Dua tren cac doan van ban sau day duoc trich xuat tu am thanh, hay tra loi cau hoi cua nguoi dung mot cach chinh xac va chi tiet.
 
-Các đoạn văn bản liên quan:
+Cac doan van ban lien quan (kem timestamp):
 {context}
 
-Câu hỏi: {question}
+Cau hoi: {question}
 
-Hãy trả lời câu hỏi dựa trên thông tin được cung cấp. Nếu thông tin không đủ để trả lời, hãy nói rõ điều đó.
+Yeu cau:
+1. Tra loi dua tren thong tin duoc cung cap
+2. Neu thong tin khong du de tra loi, hay noi ro "Toi khong tim thay thong tin lien quan"
+3. Trich dan nguon voi format [file_id:start_time-end_time] khi co the
+4. Tra loi ngan gon, chinh xac
 
-Trả lời:"""
+Tra loi:"""
 
     @classmethod
     def ensure_directories(cls):
-        """Tạo các thư mục cần thiết nếu chưa tồn tại"""
+        """Tao cac thu muc can thiet neu chua ton tai"""
         for directory in [cls.DATA_DIR, cls.AUDIO_DIR, cls.TRANSCRIPT_DIR,
                          cls.VECTOR_DB_DIR, cls.OUTPUT_DIR]:
             directory.mkdir(parents=True, exist_ok=True)
 
     @classmethod
     def validate(cls):
-        """Kiểm tra cấu hình có hợp lệ không"""
-        if not cls.OPENAI_API_KEY and cls.LLM_MODEL.startswith("gpt"):
-            # Use ASCII-safe message for Windows console compatibility
-            try:
+        """Kiem tra cau hinh co hop le khong"""
+        # Check API key based on provider
+        if cls.LLM_PROVIDER == "google" or cls.EMBEDDING_PROVIDER == "google":
+            if not cls.GOOGLE_API_KEY:
+                print("WARNING: GOOGLE_API_KEY chua duoc cau hinh!")
+        if cls.LLM_PROVIDER == "openai" or cls.EMBEDDING_PROVIDER == "openai":
+            if not cls.OPENAI_API_KEY:
                 print("WARNING: OPENAI_API_KEY chua duoc cau hinh!")
-            except UnicodeEncodeError:
-                print("WARNING: OPENAI_API_KEY not configured!")
 
         cls.ensure_directories()
         return True
 
+    @classmethod
+    def get_qdrant_config(cls):
+        """Lay cau hinh Qdrant"""
+        if cls.QDRANT_URL:
+            # Qdrant Cloud
+            return {
+                "url": cls.QDRANT_URL,
+                "api_key": cls.QDRANT_API_KEY
+            }
+        else:
+            # Local Qdrant
+            return {
+                "host": cls.QDRANT_HOST,
+                "port": cls.QDRANT_PORT
+            }
 
-# Khởi tạo và validate config khi import
+
+# Khoi tao va validate config khi import
 Config.validate()

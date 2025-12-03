@@ -1,75 +1,62 @@
-# Hệ thống Truy xuất Thông tin Đa phương thức từ Âm thanh
+# Audio Information Retrieval System
 
-## Tổng quan
+Hệ thống Truy xuất Thông tin từ Âm thanh sử dụng ASR (Whisper), Vector Database (Qdrant), và LLM (OpenAI/Google Gemini).
 
-Hệ thống Information Retrieval kết hợp ASR (Automatic Speech Recognition), Text Embedding, Vector Database và Large Language Models (LLM) để truy xuất thông tin từ audio files.
-
-**Giai đoạn 1: Text-Based IR từ Audio** (8 tuần đầu)
-
-### Kiến trúc hệ thống
+## Kiến trúc
 
 ```
-Audio Input
-    ↓
-ASR (Whisper) → Transcript + Timestamps
-    ↓
-Text Chunking (Semantic/Sentence-based)
-    ↓
-Text Embedding (Sentence-BERT/E5)
-    ↓
-Vector Database (ChromaDB/FAISS)
-    ↓
-Retrieval + RAG với LLM
-    ↓
-Answer + Timestamps
+Audio → ASR (Whisper) → Chunking (LangChain) → Embedding → Qdrant → RAG + LLM → Answer
 ```
 
-## Cài đặt
+**Hỗ trợ 2 providers:**
+- **Google**: Gemini 2.0 Flash + Text Embedding 004
+- **OpenAI**: GPT-4o-mini + Text Embedding 3
 
-### 1. Yêu cầu hệ thống
+## Quick Start
 
-- Python 3.8+
-- CUDA (optional, cho GPU acceleration)
-- 8GB+ RAM (16GB recommended cho Whisper models lớn hơn)
-
-### 2. Cài đặt dependencies
+### 1. Cài đặt
 
 ```bash
-# Tạo virtual environment (recommended)
+# Clone và tạo virtual environment
 python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# hoặc
 venv\Scripts\activate  # Windows
+# source venv/bin/activate  # Linux/Mac
 
-# Cài đặt packages
+# Cài đặt dependencies
 pip install -r requirements.txt
 ```
 
-### 3. Cấu hình
-
-Tạo file `.env` từ `.env.example`:
+### 2. Cấu hình
 
 ```bash
+# Copy config template
 cp .env.example .env
 ```
 
-Chỉnh sửa file `.env`:
+Chỉnh sửa `.env`:
 
 ```env
-# OpenAI API Key (bắt buộc cho LLM)
-OPENAI_API_KEY=your_api_key_here
+# Chọn 1 trong 2 provider:
 
-# Model Configurations
-WHISPER_MODEL=base  # tiny, base, small, medium, large
-EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-mpnet-base-v2
-LLM_MODEL=gpt-3.5-turbo
+# Option A: Google (recommended - free tier)
+GOOGLE_API_KEY=your_google_api_key
+LLM_PROVIDER=google
+EMBEDDING_PROVIDER=google
 
-# Chunking Parameters
-CHUNK_SIZE=500
-CHUNK_OVERLAP=50
+# Option B: OpenAI
+OPENAI_API_KEY=your_openai_api_key
+LLM_PROVIDER=openai
+EMBEDDING_PROVIDER=openai
+```
 
-# Retrieval Parameters
-TOP_K=5
+### 3. Chạy
+
+```bash
+# Xử lý audio
+python main.py --mode process --audio data/audio/sample.mp3
+
+# Query
+python main.py --mode interactive
 ```
 
 ## Cấu trúc thư mục
@@ -78,271 +65,250 @@ TOP_K=5
 CODE/
 ├── main.py                 # Entry point
 ├── requirements.txt        # Dependencies
-├── .env.example           # Environment config template
-├── README.md              # Hướng dẫn này
+├── .env.example           # Config template
 │
 ├── src/
-│   ├── __init__.py
-│   ├── config.py          # Cấu hình hệ thống
+│   ├── config.py          # System config
 │   └── modules/
-│       ├── __init__.py
 │       ├── asr_module.py         # Whisper ASR
-│       ├── chunking_module.py    # Text chunking
-│       ├── embedding_module.py   # Text embedding
-│       ├── vector_db_module.py   # Vector database
-│       └── rag_module.py         # RAG system
+│       ├── chunking_module.py    # LangChain Text Splitter
+│       ├── embedding_module.py   # OpenAI/Google Embeddings
+│       ├── vector_db_module.py   # Qdrant Vector DB
+│       └── rag_module.py         # RAG + LLM
 │
-├── data/
-│   ├── audio/             # Audio files input
-│   ├── transcripts/       # ASR output
-│   ├── vector_db/         # Vector database storage
-│   └── outputs/           # Query results
+├── tests/
+│   └── test_new_modules.py       # Test suite
 │
-└── outputs/               # Output files
-```
-
-## Sử dụng
-
-### 1. Xử lý Audio Files
-
-**Xử lý một file audio:**
-
-```bash
-python main.py --mode process --audio data/audio/sample.mp3
-```
-
-**Xử lý tất cả audio files trong thư mục:**
-
-```bash
-python main.py --mode process --audio data/audio/
-```
-
-Pipeline sẽ tự động:
-1. Transcribe audio → văn bản + timestamps
-2. Chunking văn bản theo ngữ nghĩa
-3. Tạo embeddings
-4. Lưu vào vector database
-
-### 2. Truy vấn hệ thống
-
-**Query một lần:**
-
-```bash
-python main.py --mode query --question "Nội dung chính của audio là gì?"
-```
-
-**Query với custom top_k:**
-
-```bash
-python main.py --mode query --question "Ai là diễn giả?" --top-k 3
-```
-
-### 3. Interactive Mode
-
-```bash
-python main.py --mode interactive
-```
-
-Chế độ tương tác cho phép:
-- Đặt nhiều câu hỏi liên tục
-- Xem thống kê database (`stats`)
-- Thoát bằng `exit` hoặc `quit`
-
-## Ví dụ sử dụng
-
-### Example 1: Xử lý podcast
-
-```bash
-# Bước 1: Xử lý audio
-python main.py --mode process --audio data/audio/podcast_episode1.mp3
-
-# Bước 2: Query
-python main.py --mode query --question "Chủ đề chính được thảo luận là gì?"
-```
-
-### Example 2: Batch processing
-
-```python
-from main import AudioIRPipeline
-
-# Initialize
-pipeline = AudioIRPipeline()
-
-# Process multiple audios
-audio_files = [
-    "data/audio/lecture1.mp3",
-    "data/audio/lecture2.mp3",
-    "data/audio/lecture3.mp3"
-]
-
-results = pipeline.process_audio_batch(audio_files)
-
-# Query
-response = pipeline.query("Nội dung bài giảng về AI là gì?")
-print(response["answer"])
-
-# Print sources with timestamps
-for source in response["sources"]:
-    print(f"[{source['start_time_formatted']}] {source['text'][:100]}...")
-```
-
-### Example 3: Sử dụng từng module riêng lẻ
-
-```python
-from src.modules import WhisperASR, TextChunker, TextEmbedding
-
-# ASR
-asr = WhisperASR(model_name="base")
-transcript = asr.transcribe_audio("audio.mp3")
-
-# Chunking
-chunker = TextChunker(chunk_size=500, method="semantic")
-chunks = chunker.chunk_transcript(transcript)
-
-# Embedding
-embedder = TextEmbedding()
-chunks_with_embeddings = embedder.encode_chunks(chunks)
+└── data/
+    ├── audio/             # Audio input
+    ├── transcripts/       # ASR output
+    └── outputs/           # Results
 ```
 
 ## Modules
 
-### 1. ASR Module (asr_module.py)
-
-**Chức năng:**
-- Chuyển đổi audio → text với Whisper
-- Tạo timestamps cho từng segment
-- Hỗ trợ batch processing
-
-**Models hỗ trợ:**
-- `tiny`: Nhanh nhất, độ chính xác thấp
-- `base`: Cân bằng (recommended)
-- `small`: Chính xác hơn
-- `medium`: Rất chính xác
-- `large`: Chính xác nhất, chậm nhất
-
-### 2. Chunking Module (chunking_module.py)
-
-**Phương pháp chunking:**
-- `fixed`: Chia theo kích thước cố định
-- `sentence`: Chia theo câu
-- `semantic`: Chia theo ngữ nghĩa (recommended)
-
-**Features:**
-- Preserve timestamps từ ASR
-- Configurable chunk size và overlap
-- Metadata cho mỗi chunk
-
-### 3. Embedding Module (embedding_module.py)
-
-**Models hỗ trợ:**
-- `paraphrase-multilingual-mpnet-base-v2`: Tiếng Việt + đa ngôn ngữ (recommended)
-- `all-MiniLM-L6-v2`: Tiếng Anh, nhẹ và nhanh
-- Custom models từ HuggingFace
-
-**Features:**
-- Batch encoding
-- Similarity computation
-- Normalize embeddings
-
-### 4. Vector Database Module (vector_db_module.py)
-
-**Databases hỗ trợ:**
-- **ChromaDB**: Persistent, dễ sử dụng (recommended)
-- **FAISS**: Nhanh, hiệu quả với datasets lớn
-
-**Features:**
-- Add/Search documents
-- Metadata filtering (ChromaDB)
-- Persistent storage
-
-### 5. RAG Module (rag_module.py)
-
-**Chức năng:**
-- Retrieval-Augmented Generation
-- Kết hợp retrieval với LLM
-- Custom prompt templates
-
-**LLM Models hỗ trợ:**
-- GPT-3.5-turbo
-- GPT-4
-- Custom OpenAI-compatible models
-
-## Performance Tips
-
-### GPU Acceleration
+### 1. ASR Module - Whisper
+Chuyển audio thành text với timestamps.
 
 ```python
-# Trong config.py hoặc .env
-WHISPER_DEVICE = "cuda"  # Sử dụng GPU
+from src.modules import WhisperASR
+
+asr = WhisperASR(model_name="base")  # tiny, base, small, medium, large
+transcript = asr.transcribe_audio("audio.mp3")
+# Output: {"full_text": "...", "segments": [{"text": "...", "start": 0.0, "end": 5.0}]}
 ```
 
-### Tối ưu Chunking
+### 2. Chunking Module - LangChain
+Chia văn bản thành chunks với timestamp preservation.
 
 ```python
-# Chunk size nhỏ: Chính xác hơn nhưng nhiều chunks
-CHUNK_SIZE = 300
-CHUNK_OVERLAP = 30
+from src.modules import TextChunker
 
-# Chunk size lớn: Ít chunks hơn, context dài hơn
-CHUNK_SIZE = 800
-CHUNK_OVERLAP = 100
+chunker = TextChunker(
+    chunk_size=500,
+    chunk_overlap=50,
+    method="recursive",  # fixed, sentence, recursive, semantic
+    embedding_provider="google"  # cho semantic chunking
+)
+chunks = chunker.chunk_transcript(transcript)
 ```
 
-### Vector Database Selection
+### 3. Embedding Module - OpenAI/Google
+Tạo vector embeddings.
 
-- **ChromaDB**: Tốt cho development, dễ debug
-- **FAISS**: Tốt cho production, datasets lớn (>10K documents)
+```python
+from src.modules import TextEmbedding
+
+# Google (768 dimensions)
+embedder = TextEmbedding(provider="google")
+
+# OpenAI (1536 dimensions)
+embedder = TextEmbedding(provider="openai")
+
+embeddings = embedder.encode_chunks(chunks)
+```
+
+### 4. Vector Database - Qdrant
+Lưu trữ và tìm kiếm vectors.
+
+```python
+from src.modules import VectorDatabase
+
+# In-memory (development)
+vector_db = VectorDatabase(
+    collection_name="audio_transcripts",
+    embedding_dimension=768  # 768 for Google, 1536 for OpenAI
+)
+
+# Docker (production)
+vector_db = VectorDatabase(
+    host="localhost",
+    port=6333,
+    collection_name="audio_transcripts"
+)
+
+vector_db.add_documents(chunks_with_embeddings)
+results = vector_db.search(query_embedding, top_k=5)
+```
+
+### 5. RAG Module - LLM
+Retrieval-Augmented Generation.
+
+```python
+from src.modules import RAGSystem
+
+rag = RAGSystem(
+    vector_db=vector_db,
+    embedder=embedder,
+    provider="google",  # hoặc "openai"
+)
+
+response = rag.query("Nội dung chính là gì?")
+print(response["answer"])
+# Kèm timestamps: [audio.mp3:00:01:30-00:02:15]
+```
+
+## Sử dụng
+
+### Command Line
+
+```bash
+# Xử lý một file audio
+python main.py --mode process --audio data/audio/lecture.mp3
+
+# Xử lý cả thư mục
+python main.py --mode process --audio data/audio/
+
+# Query một lần
+python main.py --mode query --question "AI là gì?"
+
+# Interactive mode
+python main.py --mode interactive
+```
+
+### Python API
+
+```python
+from main import AudioIRPipeline
+
+# Initialize với Google
+pipeline = AudioIRPipeline(
+    llm_provider="google",
+    embedding_provider="google"
+)
+
+# Process audio
+pipeline.process_audio("podcast.mp3")
+
+# Query
+response = pipeline.query("Chủ đề chính là gì?")
+print(response["answer"])
+
+# Xem sources với timestamps
+for src in response["sources"]:
+    print(f"[{src['start_time_formatted']}] {src['text'][:100]}...")
+```
+
+## Cấu hình
+
+### Models
+
+| Provider | Embedding Model | Dimensions | LLM Model |
+|----------|-----------------|------------|-----------|
+| Google | text-embedding-004 | 768 | gemini-2.0-flash |
+| OpenAI | text-embedding-3-small | 1536 | gpt-4o-mini |
+
+### Environment Variables
+
+```env
+# Provider Selection
+LLM_PROVIDER=google          # google hoặc openai
+EMBEDDING_PROVIDER=google    # google hoặc openai
+
+# API Keys
+GOOGLE_API_KEY=your_key
+OPENAI_API_KEY=your_key
+
+# Qdrant
+QDRANT_HOST=localhost
+QDRANT_PORT=6333
+COLLECTION_NAME=audio_transcripts
+
+# Whisper
+WHISPER_MODEL=base           # tiny, base, small, medium, large
+WHISPER_DEVICE=cuda          # cuda hoặc cpu
+
+# Chunking
+CHUNK_SIZE=500
+CHUNK_OVERLAP=50
+CHUNKING_METHOD=recursive    # fixed, sentence, recursive, semantic
+
+# RAG
+TOP_K=5
+LLM_TEMPERATURE=0.7
+```
+
+## Testing
+
+```bash
+# Chạy test suite
+python tests/test_new_modules.py
+
+# Test output mong đợi:
+# config: PASS
+# chunking_basic: PASS
+# qdrant_inmemory: PASS
+# embedding: PASS
+# pipeline_mock: PASS
+```
+
+## Qdrant Setup (Optional)
+
+Mặc định hệ thống sử dụng **Qdrant in-memory** mode. Để persistent storage:
+
+```bash
+# Docker
+docker run -p 6333:6333 qdrant/qdrant
+
+# Hoặc Qdrant Cloud: https://cloud.qdrant.io
+```
 
 ## Troubleshooting
 
-### Lỗi: "OPENAI_API_KEY chưa được cấu hình"
+### Lỗi API Key
 
+```
+ValueError: GOOGLE_API_KEY chua duoc cau hinh!
+```
 → Thêm API key vào file `.env`
 
-### Lỗi: Out of Memory khi chạy Whisper
+### Lỗi Out of Memory (Whisper)
 
-→ Sử dụng model nhỏ hơn: `WHISPER_MODEL=tiny` hoặc `base`
+```
+RuntimeError: CUDA out of memory
+```
+→ Sử dụng model nhỏ hơn: `WHISPER_MODEL=tiny` hoặc `WHISPER_DEVICE=cpu`
 
-### Lỗi: ChromaDB không tìm thấy documents
+### Lỗi Unicode (Windows)
 
-→ Kiểm tra đã process audio chưa: `python main.py --mode process --audio <file>`
+```
+UnicodeEncodeError: 'charmap' codec can't encode
+```
+→ Đã được fix trong code. Nếu vẫn lỗi, chạy: `chcp 65001`
 
-### Query trả về kết quả không liên quan
+## Tech Stack
 
-→ Tăng `TOP_K` hoặc cải thiện chunking method
-
-## Roadmap
-
-### Giai đoạn 1 (Tuần 1-8): ✅ Completed
-- [x] ASR với Whisper
-- [x] Text Chunking
-- [x] Text Embedding
-- [x] Vector Database
-- [x] RAG với LLM
-- [x] Basic CLI
-
-### Giai đoạn 1 (Tuần 9-14): Cải thiện
-- [ ] Fine-tuning retrieval
-- [ ] Evaluation metrics
-- [ ] REST API
-- [ ] Web interface
-
-### Giai đoạn 2: Multimodal (Future)
-- [ ] Audio Embedding (Wav2Vec2/HuBERT)
-- [ ] Early/Late Fusion
-- [ ] Speaker Diarization
-- [ ] Speech Emotion Recognition
+- **ASR**: OpenAI Whisper
+- **Chunking**: LangChain Text Splitters
+- **Embedding**: OpenAI/Google via LangChain
+- **Vector DB**: Qdrant
+- **LLM**: OpenAI GPT / Google Gemini
+- **Framework**: LangChain
 
 ## License
 
 MIT License
 
-## Liên hệ
-
-- Author: [Your Name]
-- Email: [your.email@example.com]
-- GitHub: [your-github-profile]
-
 ---
 
-**Developed as part of Đồ án chuyên nghành - 2025**
+**Đồ án chuyên nghành - 2025**

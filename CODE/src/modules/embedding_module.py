@@ -1,108 +1,278 @@
 """
-Embedding Module - Tạo vector embeddings cho văn bản
-Sử dụng Sentence-BERT hoặc các model embedding khác
+Embedding Module - Tao vector embeddings cho van ban
+Ho tro ca OpenAI va Google Embeddings thong qua LangChain
 """
 
-from sentence_transformers import SentenceTransformer
-import numpy as np
+import os
+import hashlib
+import json
 from typing import List, Dict, Union, Optional
 from pathlib import Path
-import json
+import numpy as np
 from tqdm import tqdm
+import time
 
 
 class TextEmbedding:
     """
-    Lớp tạo embeddings cho văn bản sử dụng Sentence-BERT
+    Lop tao embeddings cho van ban - ho tro ca OpenAI va Google
+    - OpenAI: text-embedding-3-small (1536d), text-embedding-3-large (3072d)
+    - Google: models/text-embedding-004 (768d), models/embedding-001 (768d)
     """
 
     def __init__(
         self,
-        model_name: str = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
-        device: Optional[str] = None
+        model_name: Optional[str] = None,
+        provider: str = "google",  # "openai" or "google"
+        api_key: Optional[str] = None,
+        cache_dir: Optional[str] = None
     ):
         """
-        Khởi tạo Text Embedding model
+        Khoi tao Text Embedding model
 
         Args:
-            model_name: Tên model từ sentence-transformers
-            device: Device để chạy model (cuda/cpu)
+            model_name: Ten model (neu None se dung default theo provider)
+            provider: "openai" hoac "google"
+            api_key: API key (neu khong truyen se lay tu env)
+            cache_dir: Thu muc cache embeddings
         """
+        self.provider = provider.lower()
+
+        # Default models
+        if model_name is None:
+            if self.provider == "google":
+                model_name = "models/text-embedding-004"
+            else:
+                model_name = "text-embedding-3-small"
+
         self.model_name = model_name
 
-        print(f"Đang tải embedding model '{model_name}'...")
-        self.model = SentenceTransformer(model_name, device=device)
-        self.embedding_dim = self.model.get_sentence_embedding_dimension()
-        print(f"Đã tải xong model. Embedding dimension: {self.embedding_dim}")
+        # Get API key
+        if api_key:
+            self.api_key = api_key
+        elif self.provider == "google":
+            self.api_key = os.getenv("GOOGLE_API_KEY")
+        else:
+            self.api_key = os.getenv("OPENAI_API_KEY")
+
+        if not self.api_key:
+            key_name = "GOOGLE_API_KEY" if self.provider == "google" else "OPENAI_API_KEY"
+            raise ValueError(f"{key_name} chua duoc cau hinh!")
+
+        # Initialize embeddings based on provider
+        self._init_embeddings()
+
+        # Cache setup
+        self.cache_dir = Path(cache_dir) if cache_dir else None
+        self._cache = {}
+        if self.cache_dir:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            self._load_cache()
+
+    def _init_embeddings(self):
+        """Initialize embeddings model based on provider"""
+        print(f"Dang khoi tao {self.provider.upper()} Embedding model '{self.model_name}'...")
+
+        if self.provider == "google":
+            from langchain_google_genai import GoogleGenerativeAIEmbeddings
+
+            self.embeddings = GoogleGenerativeAIEmbeddings(
+                model=self.model_name,
+                google_api_key=self.api_key
+            )
+            # Google embedding dimensions
+            if "text-embedding-004" in self.model_name:
+                self.embedding_dim = 768
+            else:
+                self.embedding_dim = 768  # Default for Google
+
+        else:  # openai
+            from langchain_openai import OpenAIEmbeddings
+
+            self.embeddings = OpenAIEmbeddings(
+                model=self.model_name,
+                openai_api_key=self.api_key
+            )
+            # OpenAI embedding dimensions
+            if "large" in self.model_name:
+                self.embedding_dim = 3072
+            else:
+                self.embedding_dim = 1536
+
+        print(f"Da khoi tao model. Provider: {self.provider}, Dimension: {self.embedding_dim}")
+
+    def _get_cache_key(self, text: str) -> str:
+        """Tao cache key tu text"""
+        # Include provider and model in cache key
+        key_str = f"{self.provider}:{self.model_name}:{text}"
+        return hashlib.md5(key_str.encode()).hexdigest()
+
+    def _load_cache(self):
+        """Load cache tu file"""
+        cache_file = self.cache_dir / "embedding_cache.json"
+        if cache_file.exists():
+            try:
+                with open(cache_file, "r") as f:
+                    self._cache = json.load(f)
+                print(f"Da load {len(self._cache)} cached embeddings")
+            except Exception as e:
+                print(f"Loi khi load cache: {e}")
+                self._cache = {}
+
+    def _save_cache(self):
+        """Luu cache ra file"""
+        if self.cache_dir:
+            cache_file = self.cache_dir / "embedding_cache.json"
+            with open(cache_file, "w") as f:
+                json.dump(self._cache, f)
 
     def encode_text(
         self,
         text: Union[str, List[str]],
-        batch_size: int = 32,
+        batch_size: int = 100,
         show_progress: bool = True,
-        normalize: bool = True
+        use_cache: bool = True
     ) -> np.ndarray:
         """
-        Tạo embeddings cho text hoặc list of texts
+        Tao embeddings cho text hoac list of texts
 
         Args:
-            text: Text hoặc list of texts cần encode
+            text: Text hoac list of texts can encode
             batch_size: Batch size cho encoding
-            show_progress: Hiển thị progress bar
-            normalize: Normalize embeddings về unit length
+            show_progress: Hien thi progress bar
+            use_cache: Su dung cache hay khong
 
         Returns:
-            Numpy array của embeddings
+            Numpy array cua embeddings
         """
-        embeddings = self.model.encode(
-            text,
-            batch_size=batch_size,
-            show_progress_bar=show_progress,
-            normalize_embeddings=normalize,
-            convert_to_numpy=True
-        )
+        # Convert single text to list
+        if isinstance(text, str):
+            texts = [text]
+            single = True
+        else:
+            texts = text
+            single = False
 
-        return embeddings
+        embeddings = []
+        texts_to_embed = []
+        text_indices = []
+
+        # Check cache
+        for i, t in enumerate(texts):
+            cache_key = self._get_cache_key(t)
+            if use_cache and cache_key in self._cache:
+                embeddings.append((i, self._cache[cache_key]))
+            else:
+                texts_to_embed.append(t)
+                text_indices.append(i)
+
+        # Embed texts that are not in cache
+        if texts_to_embed:
+            new_embeddings = self._batch_embed_with_retry(
+                texts_to_embed,
+                batch_size,
+                show_progress
+            )
+
+            # Add to result and cache
+            for idx, emb in zip(text_indices, new_embeddings):
+                embeddings.append((idx, emb))
+                if use_cache:
+                    cache_key = self._get_cache_key(texts[idx])
+                    self._cache[cache_key] = emb
+
+            # Save cache
+            if use_cache and self.cache_dir:
+                self._save_cache()
+
+        # Sort by original index
+        embeddings.sort(key=lambda x: x[0])
+        result = np.array([e[1] for e in embeddings])
+
+        return result[0] if single else result
+
+    def _batch_embed_with_retry(
+        self,
+        texts: List[str],
+        batch_size: int,
+        show_progress: bool,
+        max_retries: int = 3
+    ) -> List[List[float]]:
+        """
+        Batch embedding voi retry logic va backoff
+        """
+        all_embeddings = []
+
+        # Split into batches
+        batches = [texts[i:i + batch_size] for i in range(0, len(texts), batch_size)]
+
+        iterator = tqdm(batches, desc="Embedding batches") if show_progress else batches
+
+        for batch in iterator:
+            for attempt in range(max_retries):
+                try:
+                    batch_embeddings = self.embeddings.embed_documents(batch)
+                    all_embeddings.extend(batch_embeddings)
+                    break
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** attempt
+                        print(f"Rate limit hit, waiting {wait_time}s... (attempt {attempt + 1})")
+                        time.sleep(wait_time)
+                    else:
+                        raise e
+
+        return all_embeddings
 
     def encode_chunks(
         self,
         chunks: List[Dict],
         text_field: str = "text",
-        batch_size: int = 32
+        batch_size: int = 100
     ) -> List[Dict]:
         """
-        Tạo embeddings cho list các chunks
+        Tao embeddings cho list cac chunks
 
         Args:
-            chunks: List các chunks (dict với text field)
-            text_field: Tên field chứa text trong chunk dict
+            chunks: List cac chunks (dict voi text field)
+            text_field: Ten field chua text trong chunk dict
             batch_size: Batch size cho encoding
 
         Returns:
-            List chunks đã được thêm embeddings
+            List chunks da duoc them embeddings
         """
-        # Extract texts
         texts = [chunk[text_field] for chunk in chunks]
 
-        print(f"Đang tạo embeddings cho {len(texts)} chunks...")
+        print(f"Dang tao embeddings cho {len(texts)} chunks...")
 
-        # Generate embeddings
         embeddings = self.encode_text(
             texts,
             batch_size=batch_size,
             show_progress=True
         )
 
-        # Add embeddings to chunks
         chunks_with_embeddings = []
         for idx, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
             chunk_data = chunk.copy()
-            chunk_data["embedding"] = embedding.tolist()  # Convert to list for JSON serialization
+            chunk_data["embedding"] = embedding.tolist() if isinstance(embedding, np.ndarray) else embedding
             chunk_data["embedding_model"] = self.model_name
+            chunk_data["embedding_provider"] = self.provider
             chunks_with_embeddings.append(chunk_data)
 
-        print(f"✓ Đã tạo xong {len(chunks_with_embeddings)} embeddings")
+        print(f"Da tao xong {len(chunks_with_embeddings)} embeddings")
         return chunks_with_embeddings
+
+    def encode_query(self, query: str) -> List[float]:
+        """
+        Tao embedding cho query
+
+        Args:
+            query: Query text
+
+        Returns:
+            Embedding vector
+        """
+        return self.embeddings.embed_query(query)
 
     def compute_similarity(
         self,
@@ -110,21 +280,13 @@ class TextEmbedding:
         embedding2: Union[np.ndarray, List[float]]
     ) -> float:
         """
-        Tính cosine similarity giữa 2 embeddings
-
-        Args:
-            embedding1: Embedding thứ nhất
-            embedding2: Embedding thứ hai
-
-        Returns:
-            Cosine similarity score (0-1)
+        Tinh cosine similarity giua 2 embeddings
         """
         if isinstance(embedding1, list):
             embedding1 = np.array(embedding1)
         if isinstance(embedding2, list):
             embedding2 = np.array(embedding2)
 
-        # Cosine similarity
         similarity = np.dot(embedding1, embedding2) / (
             np.linalg.norm(embedding1) * np.linalg.norm(embedding2)
         )
@@ -138,15 +300,7 @@ class TextEmbedding:
         top_k: int = 5
     ) -> List[Dict]:
         """
-        Tìm top-k embeddings tương đồng nhất với query
-
-        Args:
-            query_embedding: Query embedding
-            candidate_embeddings: List các candidate embeddings
-            top_k: Số lượng kết quả trả về
-
-        Returns:
-            List các dict chứa index và similarity score
+        Tim top-k embeddings tuong dong nhat voi query
         """
         if isinstance(query_embedding, list):
             query_embedding = np.array(query_embedding)
@@ -159,7 +313,6 @@ class TextEmbedding:
             sim = self.compute_similarity(query_embedding, candidate)
             similarities.append({"index": idx, "similarity": sim})
 
-        # Sort by similarity (descending)
         similarities.sort(key=lambda x: x["similarity"], reverse=True)
 
         return similarities[:top_k]
@@ -169,109 +322,76 @@ class TextEmbedding:
         chunks_with_embeddings: List[Dict],
         output_path: Union[str, Path]
     ) -> Path:
-        """
-        Lưu chunks với embeddings ra file JSON
-
-        Args:
-            chunks_with_embeddings: List chunks có embeddings
-            output_path: Đường dẫn file output
-
-        Returns:
-            Path của file đã lưu
-        """
+        """Luu chunks voi embeddings ra file JSON"""
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(chunks_with_embeddings, f, ensure_ascii=False, indent=2)
 
-        print(f"Đã lưu {len(chunks_with_embeddings)} embeddings tại: {output_path}")
+        print(f"Da luu {len(chunks_with_embeddings)} embeddings tai: {output_path}")
         return output_path
 
     def load_embeddings(
         self,
         input_path: Union[str, Path]
     ) -> List[Dict]:
-        """
-        Load chunks với embeddings từ file JSON
-
-        Args:
-            input_path: Đường dẫn file input
-
-        Returns:
-            List chunks có embeddings
-        """
+        """Load chunks voi embeddings tu file JSON"""
         input_path = Path(input_path)
 
         with open(input_path, "r", encoding="utf-8") as f:
             chunks = json.load(f)
 
-        print(f"Đã load {len(chunks)} embeddings từ: {input_path}")
+        print(f"Da load {len(chunks)} embeddings tu: {input_path}")
         return chunks
-
-    def batch_encode_chunks_from_files(
-        self,
-        chunk_files: List[Union[str, Path]],
-        output_dir: Union[str, Path],
-        batch_size: int = 32
-    ) -> List[Path]:
-        """
-        Encode embeddings cho nhiều file chunks
-
-        Args:
-            chunk_files: List các file chứa chunks
-            output_dir: Thư mục lưu output
-            batch_size: Batch size
-
-        Returns:
-            List paths của các file embeddings đã lưu
-        """
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        output_paths = []
-
-        for chunk_file in tqdm(chunk_files, desc="Processing chunk files"):
-            chunk_file = Path(chunk_file)
-
-            # Load chunks
-            with open(chunk_file, "r", encoding="utf-8") as f:
-                chunks = json.load(f)
-
-            # Encode
-            chunks_with_embeddings = self.encode_chunks(chunks, batch_size=batch_size)
-
-            # Save
-            output_filename = chunk_file.stem + "_embeddings.json"
-            output_path = output_dir / output_filename
-            self.save_embeddings(chunks_with_embeddings, output_path)
-
-            output_paths.append(output_path)
-
-        print(f"\n✓ Hoàn thành! Đã tạo embeddings cho {len(output_paths)} files")
-        return output_paths
 
 
 # Test function
 if __name__ == "__main__":
-    # Example usage
-    embedder = TextEmbedding()
+    import os
 
-    # Test với text đơn giản
-    sample_texts = [
-        "Đây là câu thứ nhất về AI.",
-        "Trí tuệ nhân tạo đang phát triển nhanh.",
-        "Hôm nay trời đẹp quá."
-    ]
+    # Check which API key is available
+    google_key = os.getenv("GOOGLE_API_KEY")
+    openai_key = os.getenv("OPENAI_API_KEY")
 
-    embeddings = embedder.encode_text(sample_texts)
-    print(f"Shape: {embeddings.shape}")
+    if google_key:
+        print("Testing with Google Embeddings...")
+        embedder = TextEmbedding(provider="google")
 
-    # Test similarity
-    sim = embedder.compute_similarity(embeddings[0], embeddings[1])
-    print(f"Similarity between text 1 and 2: {sim:.4f}")
+        sample_texts = [
+            "Day la cau thu nhat ve AI.",
+            "Tri tue nhan tao dang phat trien nhanh.",
+            "Hom nay troi dep qua."
+        ]
 
-    sim = embedder.compute_similarity(embeddings[0], embeddings[2])
-    print(f"Similarity between text 1 and 3: {sim:.4f}")
+        embeddings = embedder.encode_text(sample_texts)
+        print(f"Shape: {embeddings.shape}")
 
-    print("\nEmbedding Module initialized successfully!")
+        sim = embedder.compute_similarity(embeddings[0], embeddings[1])
+        print(f"Similarity between text 1 and 2: {sim:.4f}")
+
+        sim = embedder.compute_similarity(embeddings[0], embeddings[2])
+        print(f"Similarity between text 1 and 3: {sim:.4f}")
+
+        print("\nEmbedding Module (Google) initialized successfully!")
+
+    elif openai_key:
+        print("Testing with OpenAI Embeddings...")
+        embedder = TextEmbedding(provider="openai")
+
+        sample_texts = [
+            "Day la cau thu nhat ve AI.",
+            "Tri tue nhan tao dang phat trien nhanh."
+        ]
+
+        embeddings = embedder.encode_text(sample_texts)
+        print(f"Shape: {embeddings.shape}")
+
+        print("\nEmbedding Module (OpenAI) initialized successfully!")
+
+    else:
+        print("Khong tim thay GOOGLE_API_KEY hoac OPENAI_API_KEY!")
+        print("Hay them vao file .env:")
+        print("  GOOGLE_API_KEY=your_key")
+        print("  hoac")
+        print("  OPENAI_API_KEY=your_key")

@@ -1,155 +1,84 @@
 # Quick Start Guide
 
-## Cài đặt nhanh (5 phút)
-
-### 1. Clone/Download code
+## 1. Cài đặt (2 phút)
 
 ```bash
-cd CODE
-```
+# Tạo virtual environment
+python -m venv venv
+venv\Scripts\activate  # Windows
 
-### 2. Cài đặt dependencies
-
-```bash
+# Cài dependencies
 pip install -r requirements.txt
 ```
 
-### 3. Cấu hình
-
-Tạo file `.env`:
+## 2. Cấu hình (1 phút)
 
 ```bash
-# Windows
-copy .env.example .env
-
-# Linux/Mac
 cp .env.example .env
 ```
 
-Mở file `.env` và thêm OpenAI API key:
+Mở `.env` và thêm API key:
 
+```env
+# Google (miễn phí)
+GOOGLE_API_KEY=your_google_api_key
+LLM_PROVIDER=google
+EMBEDDING_PROVIDER=google
 ```
-OPENAI_API_KEY=sk-your-api-key-here
-```
 
-## Sử dụng nhanh
+Lấy Google API key tại: https://aistudio.google.com/apikey
 
-### Bước 1: Thêm audio files
+## 3. Chạy
 
-Đặt file audio (mp3, wav, m4a) vào thư mục `data/audio/`
-
-### Bước 2: Xử lý audio
-
+### Xử lý audio:
 ```bash
-python main.py --mode process --audio data/audio/your-file.mp3
+python main.py --mode process --audio data/audio/sample.mp3
 ```
 
-Hoặc xử lý tất cả files trong thư mục:
-
-```bash
-python main.py --mode process --audio data/audio/
-```
-
-### Bước 3: Truy vấn
-
-**Chế độ interactive (recommended):**
-
+### Query:
 ```bash
 python main.py --mode interactive
 ```
 
-Sau đó nhập câu hỏi:
-
-```
-💬 Câu hỏi của bạn: Nội dung chính của audio là gì?
-```
-
-**Hoặc query trực tiếp:**
+## 4. Test nhanh
 
 ```bash
-python main.py --mode query --question "Nội dung chính là gì?"
+python tests/test_new_modules.py
 ```
 
-## Ví dụ đầy đủ
-
-```bash
-# 1. Xử lý audio
-python main.py --mode process --audio data/audio/podcast.mp3
-
-# Output:
-# [1/4] Transcribing audio...
-# [2/4] Chunking transcript...
-# [3/4] Creating embeddings...
-# [4/4] Storing in vector database...
-# ✓ Hoàn thành! Đã xử lý và lưu 25 chunks
-
-# 2. Query
-python main.py --mode interactive
-
-# 💬 Câu hỏi của bạn: Chủ đề chính là gì?
-#
-# ANSWER:
-# Chủ đề chính của audio là về trí tuệ nhân tạo và ứng dụng của nó...
-#
-# SOURCES (5 chunks):
-# [Source 1] Similarity: 0.8234
-# Audio: podcast.mp3
-# Time: 00:02:15.00 - 00:03:45.00
-# Text: Trí tuệ nhân tạo đang thay đổi nhiều lĩnh vực...
+Output mong đợi:
+```
+config: PASS
+chunking_basic: PASS
+qdrant_inmemory: PASS
+embedding: PASS
+pipeline_mock: PASS
 ```
 
-## Commands cheat sheet
+## Ví dụ Python
 
-```bash
-# Xử lý 1 file audio
-python main.py --mode process --audio data/audio/file.mp3
+```python
+from main import AudioIRPipeline
 
-# Xử lý nhiều files
-python main.py --mode process --audio data/audio/
+# Khởi tạo
+pipeline = AudioIRPipeline()
 
-# Query một lần
-python main.py --mode query --question "Câu hỏi?"
+# Xử lý audio
+pipeline.process_audio("audio.mp3")
 
-# Query với nhiều kết quả hơn
-python main.py --mode query --question "Câu hỏi?" --top-k 10
-
-# Interactive mode
-python main.py --mode interactive
-
-# Trong interactive mode:
-# - Gõ câu hỏi để query
-# - Gõ "stats" để xem thống kê
-# - Gõ "exit" để thoát
+# Hỏi đáp
+response = pipeline.query("Nội dung chính là gì?")
+print(response["answer"])
 ```
 
-## Troubleshooting nhanh
+## Troubleshooting
 
-**Q: "OPENAI_API_KEY chưa được cấu hình"**
-→ Thêm API key vào file `.env`
-
-**Q: Out of memory**
-→ Sửa trong `.env`: `WHISPER_MODEL=tiny` hoặc `base`
-
-**Q: Không tìm thấy kết quả**
-→ Kiểm tra đã xử lý audio chưa: `python main.py --mode process --audio <file>`
-
-**Q: Kết quả không chính xác**
-→ Thử tăng TOP_K: `--top-k 10`
-
-## Next steps
-
-1. Đọc [README.md](README.md) để hiểu chi tiết hơn
-2. Xem [examples/example_usage.py](examples/example_usage.py) để biết cách dùng nâng cao
-3. Tùy chỉnh các tham số trong `.env` hoặc `src/config.py`
-
-## Support
-
-Nếu gặp lỗi, kiểm tra:
-1. Python version >= 3.8
-2. Đã cài đặt đầy đủ dependencies
-3. OpenAI API key hợp lệ
-4. Đủ dung lượng disk cho models và data
+| Lỗi | Giải pháp |
+|-----|-----------|
+| `GOOGLE_API_KEY chua duoc cau hinh` | Thêm key vào `.env` |
+| `CUDA out of memory` | Đổi `WHISPER_MODEL=tiny` |
+| `UnicodeEncodeError` | Chạy `chcp 65001` |
 
 ---
 
-**Chúc bạn sử dụng thành công!** 🚀
+Xem chi tiết tại [README.md](README.md)
