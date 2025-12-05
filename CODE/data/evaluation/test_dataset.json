@@ -1,0 +1,32 @@
+[
+  {
+    "id": "q1",
+    "query": "AI la gi?",
+    "relevant_doc_ids": ["doc_0"],
+    "ground_truth_answer": "AI (Tri tue nhan tao) la linh vuc nghien cuu ve cac he thong may tinh co kha nang thuc hien cac nhiem vu thong minh nhu con nguoi."
+  },
+  {
+    "id": "q2",
+    "query": "Machine Learning hoat dong nhu the nao?",
+    "relevant_doc_ids": ["doc_1"],
+    "ground_truth_answer": "Machine Learning cho phep may tinh hoc tu du lieu ma khong can lap trinh cu the cho tung truong hop."
+  },
+  {
+    "id": "q3",
+    "query": "Deep Learning khac gi voi Machine Learning?",
+    "relevant_doc_ids": ["doc_2"],
+    "ground_truth_answer": "Deep Learning su dung cac mang neural nhieu tang (deep neural networks) de hoc cac bieu dien phuc tap tu du lieu, trong khi Machine Learning truyen thong su dung cac thuat toan don gian hon."
+  },
+  {
+    "id": "q4",
+    "query": "Ung dung cua AI trong thuc te?",
+    "relevant_doc_ids": ["doc_0", "doc_1"],
+    "ground_truth_answer": "AI duoc ung dung rong rai trong nhan dien giong noi, xu ly ngon ngu tu nhien, thi giac may tinh, va nhieu linh vuc khac."
+  },
+  {
+    "id": "q5",
+    "query": "Neural network la gi?",
+    "relevant_doc_ids": ["doc_2"],
+    "ground_truth_answer": "Neural network la mo hinh tinh toan lay cam hung tu bo nao nguoi, bao gom cac node (neuron) ket noi voi nhau theo cac tang."
+  }
+]

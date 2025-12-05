@@ -1,0 +1,124 @@
+[
+  {
+    "id": "vn_1",
+    "query": "AI la gi?",
+    "relevant_doc_ids": [
+      "ctx_0"
+    ],
+    "ground_truth_answer": "AI la linh vuc khoa hoc may tinh nghien cuu ve viec tao ra cac he thong thong minh"
+  },
+  {
+    "id": "vn_2",
+    "query": "Ung dung cua AI bao gom nhung gi?",
+    "relevant_doc_ids": [
+      "ctx_0"
+    ],
+    "ground_truth_answer": "nhan dien giong noi, xu ly ngon ngu tu nhien, thi giac may tinh va robot tu dong"
+  },
+  {
+    "id": "vn_3",
+    "query": "Machine Learning la gi?",
+    "relevant_doc_ids": [
+      "ctx_1"
+    ],
+    "ground_truth_answer": "Machine Learning la mot nhanh cua tri tue nhan tao cho phep may tinh hoc tu du lieu"
+  },
+  {
+    "id": "vn_4",
+    "query": "Cac phuong phap ML bao gom gi?",
+    "relevant_doc_ids": [
+      "ctx_1"
+    ],
+    "ground_truth_answer": "supervised learning, unsupervised learning va reinforcement learning"
+  },
+  {
+    "id": "vn_5",
+    "query": "Deep Learning su dung gi?",
+    "relevant_doc_ids": [
+      "ctx_2"
+    ],
+    "ground_truth_answer": "mang neural nhan tao nhieu tang"
+  },
+  {
+    "id": "vn_6",
+    "query": "Deep Learning hieu qua trong linh vuc nao?",
+    "relevant_doc_ids": [
+      "ctx_2"
+    ],
+    "ground_truth_answer": "xu ly hinh anh, am thanh va ngon ngu tu nhien"
+  },
+  {
+    "id": "vn_7",
+    "query": "CNN dung cho gi?",
+    "relevant_doc_ids": [
+      "ctx_2",
+      "ctx_4"
+    ],
+    "ground_truth_answer": "xu ly hinh anh va computer vision"
+  },
+  {
+    "id": "vn_8",
+    "query": "NLP la gi?",
+    "relevant_doc_ids": [
+      "ctx_3"
+    ],
+    "ground_truth_answer": "NLP la linh vuc xu ly ngon ngu tu nhien giup may tinh hieu va tao ra ngon ngu cua con nguoi"
+  },
+  {
+    "id": "vn_9",
+    "query": "Ung dung cua NLP?",
+    "relevant_doc_ids": [
+      "ctx_3"
+    ],
+    "ground_truth_answer": "dich may, trich xuat thong tin, phan tich cam xuc va chatbot"
+  },
+  {
+    "id": "vn_10",
+    "query": "Transformer dung cho gi?",
+    "relevant_doc_ids": [
+      "ctx_3"
+    ],
+    "ground_truth_answer": "Transformer la kien truc hien dai nhat cho NLP"
+  },
+  {
+    "id": "vn_11",
+    "query": "Computer Vision la gi?",
+    "relevant_doc_ids": [
+      "ctx_4"
+    ],
+    "ground_truth_answer": "Computer Vision la linh vuc thi giac may tinh cho phep may tinh hieu va phan tich hinh anh va video"
+  },
+  {
+    "id": "vn_12",
+    "query": "Xe tu lai dung cong nghe gi?",
+    "relevant_doc_ids": [
+      "ctx_4"
+    ],
+    "ground_truth_answer": "Computer Vision va CNN"
+  },
+  {
+    "id": "vn_13",
+    "query": "RNN dung cho loai du lieu nao?",
+    "relevant_doc_ids": [
+      "ctx_2"
+    ],
+    "ground_truth_answer": "chuoi du lieu"
+  },
+  {
+    "id": "vn_14",
+    "query": "Kien truc nao pho bien cho hinh anh?",
+    "relevant_doc_ids": [
+      "ctx_2",
+      "ctx_4"
+    ],
+    "ground_truth_answer": "CNN"
+  },
+  {
+    "id": "vn_15",
+    "query": "AI co the lam gi?",
+    "relevant_doc_ids": [
+      "ctx_0"
+    ],
+    "ground_truth_answer": "hoc, suy luan, va tu cai thien theo thoi gian"
+  }
+]

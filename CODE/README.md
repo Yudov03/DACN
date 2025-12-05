@@ -17,7 +17,7 @@ Audio → ASR (Whisper) → Chunking (LangChain) → Embedding → Qdrant → RA
 ### 1. Cài đặt
 
 ```bash
-# Clone và tạo virtual environment
+# Tạo virtual environment
 python -m venv venv
 venv\Scripts\activate  # Windows
 # source venv/bin/activate  # Linux/Mac
@@ -29,24 +29,16 @@ pip install -r requirements.txt
 ### 2. Cấu hình
 
 ```bash
-# Copy config template
 cp .env.example .env
 ```
 
 Chỉnh sửa `.env`:
 
 ```env
-# Chọn 1 trong 2 provider:
-
-# Option A: Google (recommended - free tier)
+# Google (recommended - free tier)
 GOOGLE_API_KEY=your_google_api_key
 LLM_PROVIDER=google
 EMBEDDING_PROVIDER=google
-
-# Option B: OpenAI
-OPENAI_API_KEY=your_openai_api_key
-LLM_PROVIDER=openai
-EMBEDDING_PROVIDER=openai
 ```
 
 ### 3. Chạy
@@ -74,33 +66,38 @@ CODE/
 │       ├── chunking_module.py    # LangChain Text Splitter
 │       ├── embedding_module.py   # OpenAI/Google Embeddings
 │       ├── vector_db_module.py   # Qdrant Vector DB
-│       └── rag_module.py         # RAG + LLM
+│       ├── rag_module.py         # RAG + LLM
+│       └── evaluation_module.py  # Benchmark & Metrics
+│
+├── scripts/
+│   ├── download_dataset.py    # Download SQuAD, Vietnamese QA
+│   ├── run_benchmark.py       # Full benchmark
+│   ├── run_evaluation.py      # Quick evaluation
+│   └── tune_parameters.py     # Parameter tuning
 │
 ├── tests/
-│   └── test_new_modules.py       # Test suite
+│   └── test_new_modules.py    # Test suite
 │
 └── data/
-    ├── audio/             # Audio input
-    ├── transcripts/       # ASR output
-    └── outputs/           # Results
+    ├── audio/                 # Audio input
+    ├── transcripts/           # ASR output
+    ├── evaluation/
+    │   ├── datasets/          # Test datasets
+    │   └── benchmark_results/ # Results
+    └── tuning_results/        # Tuning results
 ```
 
 ## Modules
 
 ### 1. ASR Module - Whisper
-Chuyển audio thành text với timestamps.
-
 ```python
 from src.modules import WhisperASR
 
 asr = WhisperASR(model_name="base")  # tiny, base, small, medium, large
 transcript = asr.transcribe_audio("audio.mp3")
-# Output: {"full_text": "...", "segments": [{"text": "...", "start": 0.0, "end": 5.0}]}
 ```
 
 ### 2. Chunking Module - LangChain
-Chia văn bản thành chunks với timestamp preservation.
-
 ```python
 from src.modules import TextChunker
 
@@ -108,105 +105,131 @@ chunker = TextChunker(
     chunk_size=500,
     chunk_overlap=50,
     method="recursive",  # fixed, sentence, recursive, semantic
-    embedding_provider="google"  # cho semantic chunking
 )
 chunks = chunker.chunk_transcript(transcript)
 ```
 
 ### 3. Embedding Module - OpenAI/Google
-Tạo vector embeddings.
-
 ```python
 from src.modules import TextEmbedding
 
-# Google (768 dimensions)
-embedder = TextEmbedding(provider="google")
-
-# OpenAI (1536 dimensions)
-embedder = TextEmbedding(provider="openai")
-
+embedder = TextEmbedding(provider="google")  # hoặc "openai"
 embeddings = embedder.encode_chunks(chunks)
 ```
 
 ### 4. Vector Database - Qdrant
-Lưu trữ và tìm kiếm vectors.
-
 ```python
 from src.modules import VectorDatabase
 
-# In-memory (development)
 vector_db = VectorDatabase(
     collection_name="audio_transcripts",
     embedding_dimension=768  # 768 for Google, 1536 for OpenAI
 )
-
-# Docker (production)
-vector_db = VectorDatabase(
-    host="localhost",
-    port=6333,
-    collection_name="audio_transcripts"
-)
-
 vector_db.add_documents(chunks_with_embeddings)
 results = vector_db.search(query_embedding, top_k=5)
 ```
 
 ### 5. RAG Module - LLM
-Retrieval-Augmented Generation.
-
 ```python
 from src.modules import RAGSystem
 
 rag = RAGSystem(
     vector_db=vector_db,
     embedder=embedder,
-    provider="google",  # hoặc "openai"
+    provider="google",
 )
-
 response = rag.query("Nội dung chính là gì?")
 print(response["answer"])
-# Kèm timestamps: [audio.mp3:00:01:30-00:02:15]
 ```
 
-## Sử dụng
-
-### Command Line
-
-```bash
-# Xử lý một file audio
-python main.py --mode process --audio data/audio/lecture.mp3
-
-# Xử lý cả thư mục
-python main.py --mode process --audio data/audio/
-
-# Query một lần
-python main.py --mode query --question "AI là gì?"
-
-# Interactive mode
-python main.py --mode interactive
-```
-
-### Python API
-
+### 6. Evaluation Module - Metrics
 ```python
-from main import AudioIRPipeline
+from src.modules import RAGEvaluator
 
-# Initialize với Google
-pipeline = AudioIRPipeline(
-    llm_provider="google",
-    embedding_provider="google"
+evaluator = RAGEvaluator(
+    rag_system=rag,
+    embedder=embedder,
+    vector_db=vector_db
 )
 
-# Process audio
-pipeline.process_audio("podcast.mp3")
+# Retrieval metrics: Precision@K, Recall@K, MRR, NDCG
+# Generation metrics: F1, BLEU, Semantic Similarity
+results = evaluator.evaluate_end_to_end(test_data, k_values=[1, 3, 5, 10])
+```
 
-# Query
-response = pipeline.query("Chủ đề chính là gì?")
-print(response["answer"])
+## Benchmark & Fine-tuning
 
-# Xem sources với timestamps
-for src in response["sources"]:
-    print(f"[{src['start_time_formatted']}] {src['text'][:100]}...")
+### Download Datasets
+
+```bash
+# Vietnamese QA dataset
+python scripts/download_dataset.py --dataset vietnamese
+
+# SQuAD 2.0 (English)
+python scripts/download_dataset.py --dataset squad --samples 50
+```
+
+### Run Benchmark
+
+```bash
+# Benchmark với Vietnamese dataset
+python scripts/run_benchmark.py --dataset vietnamese
+
+# Benchmark với SQuAD
+python scripts/run_benchmark.py --dataset squad
+```
+
+Output:
+```
+RETRIEVAL METRICS:
+  MRR, Precision@K, Recall@K, NDCG@K, Hit Rate@K
+
+GENERATION METRICS:
+  F1 Score, BLEU Score, Semantic Similarity, Latency
+```
+
+### Parameter Tuning
+
+```bash
+# Random search (nhanh)
+python scripts/tune_parameters.py --method random --iterations 10
+
+# Grid search (kỹ hơn)
+python scripts/tune_parameters.py --method grid
+```
+
+Tham số có thể tune:
+- `chunk_size`: 300, 500, 800
+- `chunk_overlap`: 30, 50, 100
+- `chunking_method`: fixed, sentence, recursive
+- `top_k`: 3, 5, 10
+- `llm_temperature`: 0.3, 0.7
+
+### Best Config (từ tuning):
+
+```python
+{
+    "chunk_size": 500,
+    "chunk_overlap": 50,
+    "chunking_method": "sentence",
+    "top_k": 5,
+    "llm_temperature": 0.3
+}
+```
+
+## Testing
+
+```bash
+# Chạy test suite
+python tests/test_new_modules.py
+
+# Expected output:
+# config: PASS
+# chunking_basic: PASS
+# qdrant_inmemory: PASS
+# embedding: PASS
+# pipeline_mock: PASS
+# Total: 5 passed, 0 failed
 ```
 
 ## Cấu hình
@@ -222,8 +245,8 @@ for src in response["sources"]:
 
 ```env
 # Provider Selection
-LLM_PROVIDER=google          # google hoặc openai
-EMBEDDING_PROVIDER=google    # google hoặc openai
+LLM_PROVIDER=google
+EMBEDDING_PROVIDER=google
 
 # API Keys
 GOOGLE_API_KEY=your_key
@@ -232,69 +255,37 @@ OPENAI_API_KEY=your_key
 # Qdrant
 QDRANT_HOST=localhost
 QDRANT_PORT=6333
-COLLECTION_NAME=audio_transcripts
 
 # Whisper
-WHISPER_MODEL=base           # tiny, base, small, medium, large
-WHISPER_DEVICE=cuda          # cuda hoặc cpu
+WHISPER_MODEL=base
+WHISPER_DEVICE=cuda
 
 # Chunking
 CHUNK_SIZE=500
 CHUNK_OVERLAP=50
-CHUNKING_METHOD=recursive    # fixed, sentence, recursive, semantic
+CHUNKING_METHOD=recursive
 
 # RAG
 TOP_K=5
 LLM_TEMPERATURE=0.7
 ```
 
-## Testing
-
-```bash
-# Chạy test suite
-python tests/test_new_modules.py
-
-# Test output mong đợi:
-# config: PASS
-# chunking_basic: PASS
-# qdrant_inmemory: PASS
-# embedding: PASS
-# pipeline_mock: PASS
-```
-
 ## Qdrant Setup (Optional)
 
-Mặc định hệ thống sử dụng **Qdrant in-memory** mode. Để persistent storage:
+Mặc định sử dụng **Qdrant in-memory**. Để persistent storage:
 
 ```bash
-# Docker
 docker run -p 6333:6333 qdrant/qdrant
-
-# Hoặc Qdrant Cloud: https://cloud.qdrant.io
 ```
 
 ## Troubleshooting
 
-### Lỗi API Key
-
-```
-ValueError: GOOGLE_API_KEY chua duoc cau hinh!
-```
-→ Thêm API key vào file `.env`
-
-### Lỗi Out of Memory (Whisper)
-
-```
-RuntimeError: CUDA out of memory
-```
-→ Sử dụng model nhỏ hơn: `WHISPER_MODEL=tiny` hoặc `WHISPER_DEVICE=cpu`
-
-### Lỗi Unicode (Windows)
-
-```
-UnicodeEncodeError: 'charmap' codec can't encode
-```
-→ Đã được fix trong code. Nếu vẫn lỗi, chạy: `chcp 65001`
+| Lỗi | Giải pháp |
+|-----|-----------|
+| `GOOGLE_API_KEY chua duoc cau hinh` | Thêm key vào `.env` |
+| `CUDA out of memory` | Đổi `WHISPER_MODEL=tiny` |
+| `UnicodeEncodeError` | Chạy `chcp 65001` |
+| `429 Rate limit exceeded` | Đợi 1 phút hoặc dùng paid tier |
 
 ## Tech Stack
 
@@ -303,7 +294,7 @@ UnicodeEncodeError: 'charmap' codec can't encode
 - **Embedding**: OpenAI/Google via LangChain
 - **Vector DB**: Qdrant
 - **LLM**: OpenAI GPT / Google Gemini
-- **Framework**: LangChain
+- **Evaluation**: Custom metrics (MRR, NDCG, F1, BLEU)
 
 ## License
 

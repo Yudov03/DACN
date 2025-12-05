@@ -1,0 +1,146 @@
+{
+  "timestamp": "2025-12-05T11:37:08.344848",
+  "test_data_path": "data\\evaluation\\datasets\\vietnamese_sample_eval.json",
+  "num_test_cases": 15,
+  "param_ranges": {
+    "chunk_size": [
+      300,
+      500,
+      800
+    ],
+    "chunk_overlap": [
+      30,
+      50,
+      100
+    ],
+    "chunking_method": [
+      "recursive",
+      "sentence"
+    ],
+    "top_k": [
+      3,
+      5,
+      10
+    ],
+    "llm_temperature": [
+      0.3,
+      0.7
+    ]
+  },
+  "results": [
+    {
+      "params": {
+        "chunk_size": 500,
+        "chunk_overlap": 30,
+        "chunking_method": "sentence",
+        "top_k": 5,
+        "llm_temperature": 0.3
+      },
+      "metrics": {
+        "mrr": 0.0,
+        "ndcg@5": 0.0,
+        "f1_score": 0.048667876441556394,
+        "semantic_sim": 0.6351979585890675,
+        "latency_ms": 1208.0843289693196,
+        "num_chunks": 3
+      },
+      "eval_time_s": 38.82145714759827,
+      "score": 0.1367731670061248
+    },
+    {
+      "params": {
+        "chunk_size": 500,
+        "chunk_overlap": 50,
+        "chunking_method": "sentence",
+        "top_k": 5,
+        "llm_temperature": 0.3
+      },
+      "metrics": {
+        "mrr": 0.0,
+        "ndcg@5": 0.0,
+        "f1_score": 0.045723409982466955,
+        "semantic_sim": 0.6240726301769265,
+        "latency_ms": 1219.486888249715,
+        "num_chunks": 3
+      },
+      "eval_time_s": 69.89264392852783,
+      "score": 0.1339592080318787
+    },
+    {
+      "params": {
+        "chunk_size": 300,
+        "chunk_overlap": 30,
+        "chunking_method": "recursive",
+        "top_k": 5,
+        "llm_temperature": 0.7
+      },
+      "metrics": {
+        "mrr": 0.0,
+        "ndcg@5": 0.0,
+        "f1_score": 0.041849105834613085,
+        "semantic_sim": 0.6156236329811812,
+        "latency_ms": 1203.3705552419026,
+        "num_chunks": 3
+      },
+      "eval_time_s": 38.78557753562927,
+      "score": 0.13149454776315886
+    },
+    {
+      "params": {
+        "chunk_size": 800,
+        "chunk_overlap": 30,
+        "chunking_method": "recursive",
+        "top_k": 10,
+        "llm_temperature": 0.7
+      },
+      "metrics": {
+        "mrr": 0.0,
+        "ndcg@5": 0.0,
+        "f1_score": 0.036127530539394374,
+        "semantic_sim": 0.5555332591138779,
+        "latency_ms": 1864.5811080932617,
+        "num_chunks": 3
+      },
+      "eval_time_s": 49.36179709434509,
+      "score": 0.11833215793065445
+    },
+    {
+      "params": {
+        "chunk_size": 800,
+        "chunk_overlap": 100,
+        "chunking_method": "sentence",
+        "top_k": 3,
+        "llm_temperature": 0.3
+      },
+      "metrics": {
+        "mrr": 0.0,
+        "ndcg@5": 0.0,
+        "f1_score": 0.029646937680063976,
+        "semantic_sim": 0.544930621328507,
+        "latency_ms": 1714.1921043395996,
+        "num_chunks": 3
+      },
+      "eval_time_s": 45.996418714523315,
+      "score": 0.1149155118017142
+    }
+  ],
+  "best_config": {
+    "params": {
+      "chunk_size": 500,
+      "chunk_overlap": 30,
+      "chunking_method": "sentence",
+      "top_k": 5,
+      "llm_temperature": 0.3
+    },
+    "metrics": {
+      "mrr": 0.0,
+      "ndcg@5": 0.0,
+      "f1_score": 0.048667876441556394,
+      "semantic_sim": 0.6351979585890675,
+      "latency_ms": 1208.0843289693196,
+      "num_chunks": 3
+    },
+    "eval_time_s": 38.82145714759827,
+    "score": 0.1367731670061248
+  }
+}

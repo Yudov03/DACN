@@ -1,5 +1,5 @@
 """
-Modules package - Chứa các module chính của hệ thống
+Modules package - Chua cac module chinh cua he thong
 """
 
 # Lazy imports to avoid dependency errors
@@ -8,7 +8,8 @@ __all__ = [
     'TextChunker',
     'TextEmbedding',
     'VectorDatabase',
-    'RAGSystem'
+    'RAGSystem',
+    'RAGEvaluator'
 ]
 
 def __getattr__(name):
@@ -28,4 +29,7 @@ def __getattr__(name):
     elif name == 'RAGSystem':
         from .rag_module import RAGSystem
         return RAGSystem
+    elif name == 'RAGEvaluator':
+        from .evaluation_module import RAGEvaluator
+        return RAGEvaluator
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -1,0 +1,452 @@
+[
+  {
+    "id": "56ddde6b9a695914005b9628",
+    "query": "In what country is Normandy located?",
+    "relevant_doc_ids": [
+      "ctx_0"
+    ],
+    "ground_truth_answer": "France",
+    "context_id": "ctx_0"
+  },
+  {
+    "id": "56ddde6b9a695914005b9629",
+    "query": "When were the Normans in Normandy?",
+    "relevant_doc_ids": [
+      "ctx_0"
+    ],
+    "ground_truth_answer": "10th and 11th centuries",
+    "context_id": "ctx_0"
+  },
+  {
+    "id": "56ddde6b9a695914005b962a",
+    "query": "From which countries did the Norse originate?",
+    "relevant_doc_ids": [
+      "ctx_0"
+    ],
+    "ground_truth_answer": "Denmark, Iceland and Norway",
+    "context_id": "ctx_0"
+  },
+  {
+    "id": "56ddde6b9a695914005b962b",
+    "query": "Who was the Norse leader?",
+    "relevant_doc_ids": [
+      "ctx_0"
+    ],
+    "ground_truth_answer": "Rollo",
+    "context_id": "ctx_0"
+  },
+  {
+    "id": "56ddde6b9a695914005b962c",
+    "query": "What century did the Normans first gain their separate identity?",
+    "relevant_doc_ids": [
+      "ctx_0"
+    ],
+    "ground_truth_answer": "10th century",
+    "context_id": "ctx_0"
+  },
+  {
+    "id": "5ad39d53604f3c001a3fe8d1",
+    "query": "Who gave their name to Normandy in the 1000's and 1100's",
+    "relevant_doc_ids": [
+      "ctx_0"
+    ],
+    "ground_truth_answer": "Normans",
+    "context_id": "ctx_0"
+  },
+  {
+    "id": "5ad39d53604f3c001a3fe8d2",
+    "query": "What is France a region of?",
+    "relevant_doc_ids": [
+      "ctx_0"
+    ],
+    "ground_truth_answer": "Normandy",
+    "context_id": "ctx_0"
+  },
+  {
+    "id": "5ad39d53604f3c001a3fe8d3",
+    "query": "Who did King Charles III swear fealty to?",
+    "relevant_doc_ids": [
+      "ctx_0"
+    ],
+    "ground_truth_answer": "Rollo",
+    "context_id": "ctx_0"
+  },
+  {
+    "id": "5ad39d53604f3c001a3fe8d4",
+    "query": "When did the Frankish identity emerge?",
+    "relevant_doc_ids": [
+      "ctx_0"
+    ],
+    "ground_truth_answer": "10th century",
+    "context_id": "ctx_0"
+  },
+  {
+    "id": "56dddf4066d3e219004dad5f",
+    "query": "Who was the duke in the battle of Hastings?",
+    "relevant_doc_ids": [
+      "ctx_1"
+    ],
+    "ground_truth_answer": "William the Conqueror",
+    "context_id": "ctx_1"
+  },
+  {
+    "id": "56dddf4066d3e219004dad60",
+    "query": "Who ruled the duchy of Normandy",
+    "relevant_doc_ids": [
+      "ctx_1"
+    ],
+    "ground_truth_answer": "Richard I",
+    "context_id": "ctx_1"
+  },
+  {
+    "id": "56dddf4066d3e219004dad61",
+    "query": "What religion were the Normans",
+    "relevant_doc_ids": [
+      "ctx_1"
+    ],
+    "ground_truth_answer": "Catholic",
+    "context_id": "ctx_1"
+  },
+  {
+    "id": "5ad3a266604f3c001a3fea27",
+    "query": "What type of major impact did the Norman dynasty have on modern Europe?",
+    "relevant_doc_ids": [
+      "ctx_1"
+    ],
+    "ground_truth_answer": "political, cultural and military",
+    "context_id": "ctx_1"
+  },
+  {
+    "id": "5ad3a266604f3c001a3fea28",
+    "query": "Who was famed for their Christian spirit?",
+    "relevant_doc_ids": [
+      "ctx_1"
+    ],
+    "ground_truth_answer": "Normans",
+    "context_id": "ctx_1"
+  },
+  {
+    "id": "5ad3a266604f3c001a3fea29",
+    "query": "Who assimilted the Roman language?",
+    "relevant_doc_ids": [
+      "ctx_1"
+    ],
+    "ground_truth_answer": "Normans",
+    "context_id": "ctx_1"
+  },
+  {
+    "id": "5ad3a266604f3c001a3fea2a",
+    "query": "Who ruled the country of Normandy?",
+    "relevant_doc_ids": [
+      "ctx_1"
+    ],
+    "ground_truth_answer": "Richard I",
+    "context_id": "ctx_1"
+  },
+  {
+    "id": "5ad3a266604f3c001a3fea2b",
+    "query": "What principality did William the conquerer found?",
+    "relevant_doc_ids": [
+      "ctx_1"
+    ],
+    "ground_truth_answer": "Antioch",
+    "context_id": "ctx_1"
+  },
+  {
+    "id": "56dde0379a695914005b9636",
+    "query": "What is the original meaning of the word Norman?",
+    "relevant_doc_ids": [
+      "ctx_2"
+    ],
+    "ground_truth_answer": "Viking",
+    "context_id": "ctx_2"
+  },
+  {
+    "id": "56dde0379a695914005b9637",
+    "query": "When was the Latin version of the word Norman first recorded?",
+    "relevant_doc_ids": [
+      "ctx_2"
+    ],
+    "ground_truth_answer": "9th century",
+    "context_id": "ctx_2"
+  },
+  {
+    "id": "5ad3ab70604f3c001a3feb89",
+    "query": "What name comes from the English words Normans/Normanz?",
+    "relevant_doc_ids": [
+      "ctx_2"
+    ],
+    "ground_truth_answer": "\"Normans\"",
+    "context_id": "ctx_2"
+  },
+  {
+    "id": "5ad3ab70604f3c001a3feb8a",
+    "query": "When was the French version of the word Norman first recorded?",
+    "relevant_doc_ids": [
+      "ctx_2"
+    ],
+    "ground_truth_answer": "9th century",
+    "context_id": "ctx_2"
+  },
+  {
+    "id": "56dde0ba66d3e219004dad75",
+    "query": "When was the Duchy of Normandy founded?",
+    "relevant_doc_ids": [
+      "ctx_3"
+    ],
+    "ground_truth_answer": "911",
+    "context_id": "ctx_3"
+  },
+  {
+    "id": "56dde0ba66d3e219004dad76",
+    "query": "Who did Rollo sign the treaty of Saint-Clair-sur-Epte with?",
+    "relevant_doc_ids": [
+      "ctx_3"
+    ],
+    "ground_truth_answer": "King Charles III",
+    "context_id": "ctx_3"
+  },
+  {
+    "id": "56dde0ba66d3e219004dad77",
+    "query": "What river originally bounded the Duchy",
+    "relevant_doc_ids": [
+      "ctx_3"
+    ],
+    "ground_truth_answer": "Seine",
+    "context_id": "ctx_3"
+  },
+  {
+    "id": "5ad3ad61604f3c001a3fec0d",
+    "query": "when did Nors encampments ivolve into destructive incursions?",
+    "relevant_doc_ids": [
+      "ctx_3"
+    ],
+    "ground_truth_answer": "10th century",
+    "context_id": "ctx_3"
+  },
+  {
+    "id": "5ad3ad61604f3c001a3fec0e",
+    "query": "What treaty was established in the 9th century?",
+    "relevant_doc_ids": [
+      "ctx_3"
+    ],
+    "ground_truth_answer": "treaty of Saint-Clair-sur-Epte",
+    "context_id": "ctx_3"
+  },
+  {
+    "id": "5ad3ad61604f3c001a3fec0f",
+    "query": "Who established a treaty with King Charles the third of France?",
+    "relevant_doc_ids": [
+      "ctx_3"
+    ],
+    "ground_truth_answer": "Rollo",
+    "context_id": "ctx_3"
+  },
+  {
+    "id": "5ad3ad61604f3c001a3fec10",
+    "query": "What did the French promises to protect Rollo and his men from?",
+    "relevant_doc_ids": [
+      "ctx_3"
+    ],
+    "ground_truth_answer": "further Viking incursions.",
+    "context_id": "ctx_3"
+  },
+  {
+    "id": "56dde1d966d3e219004dad8d",
+    "query": "Who upon arriving gave the original viking settlers a common identity?",
+    "relevant_doc_ids": [
+      "ctx_4"
+    ],
+    "ground_truth_answer": "Rollo",
+    "context_id": "ctx_4"
+  },
+  {
+    "id": "5ad3ae14604f3c001a3fec39",
+    "query": "When did Rollo begin to arrive in Normandy?",
+    "relevant_doc_ids": [
+      "ctx_4"
+    ],
+    "ground_truth_answer": "880s",
+    "context_id": "ctx_4"
+  },
+  {
+    "id": "5ad3ae14604f3c001a3fec3a",
+    "query": "What Viking groups were conquered by Rollo?",
+    "relevant_doc_ids": [
+      "ctx_4"
+    ],
+    "ground_truth_answer": "Danes, Norwegians, Norse–Gaels, Orkney Vikings, possibly Swedes, and Anglo-Danes",
+    "context_id": "ctx_4"
+  },
+  {
+    "id": "56dde27d9a695914005b9651",
+    "query": "What was the Norman religion?",
+    "relevant_doc_ids": [
+      "ctx_5"
+    ],
+    "ground_truth_answer": "Catholicism",
+    "context_id": "ctx_5"
+  },
+  {
+    "id": "56dde27d9a695914005b9652",
+    "query": "What part of France were the Normans located?",
+    "relevant_doc_ids": [
+      "ctx_5"
+    ],
+    "ground_truth_answer": "north",
+    "context_id": "ctx_5"
+  },
+  {
+    "id": "5ad3af11604f3c001a3fec63",
+    "query": "What was replace with the Norse religion?",
+    "relevant_doc_ids": [
+      "ctx_5"
+    ],
+    "ground_truth_answer": "Catholicism",
+    "context_id": "ctx_5"
+  },
+  {
+    "id": "5ad3af11604f3c001a3fec64",
+    "query": "What did maternal Old Norse traditions merge with?",
+    "relevant_doc_ids": [
+      "ctx_5"
+    ],
+    "ground_truth_answer": "Frankish heritage",
+    "context_id": "ctx_5"
+  },
+  {
+    "id": "5ad3af11604f3c001a3fec65",
+    "query": "What language replaced the Gallo-Romance language?",
+    "relevant_doc_ids": [
+      "ctx_5"
+    ],
+    "ground_truth_answer": "Old Norse",
+    "context_id": "ctx_5"
+  },
+  {
+    "id": "56dde2fa66d3e219004dad9b",
+    "query": "What was one of the Norman's major exports?",
+    "relevant_doc_ids": [
+      "ctx_6"
+    ],
+    "ground_truth_answer": "fighting horsemen",
+    "context_id": "ctx_6"
+  },
+  {
+    "id": "5ad3c626604f3c001a3ff011",
+    "query": "Who adopted the fuedel doctrines of the Normans?",
+    "relevant_doc_ids": [
+      "ctx_6"
+    ],
+    "ground_truth_answer": "France",
+    "context_id": "ctx_6"
+  },
+  {
+    "id": "5ad3c626604f3c001a3ff012",
+    "query": "What was one of the Norman's major imports?",
+    "relevant_doc_ids": [
+      "ctx_6"
+    ],
+    "ground_truth_answer": "fighting horsemen",
+    "context_id": "ctx_6"
+  },
+  {
+    "id": "5ad3c626604f3c001a3ff013",
+    "query": "Who's arristocracy eventually served as avid Crusaders?",
+    "relevant_doc_ids": [
+      "ctx_6"
+    ],
+    "ground_truth_answer": "Italy, France and England",
+    "context_id": "ctx_6"
+  },
+  {
+    "id": "56de0f6a4396321400ee257f",
+    "query": "Who was the Normans' main enemy in Italy, the Byzantine Empire and Armenia?",
+    "relevant_doc_ids": [
+      "ctx_7"
+    ],
+    "ground_truth_answer": "Seljuk Turks",
+    "context_id": "ctx_7"
+  },
+  {
+    "id": "5ad3dbc6604f3c001a3ff3e9",
+    "query": "Who entered Italy soon after the Byzantine Empire?",
+    "relevant_doc_ids": [
+      "ctx_7"
+    ],
+    "ground_truth_answer": "Normans",
+    "context_id": "ctx_7"
+  },
+  {
+    "id": "5ad3dbc6604f3c001a3ff3ea",
+    "query": "Who did the Normans fight in Italy?",
+    "relevant_doc_ids": [
+      "ctx_7"
+    ],
+    "ground_truth_answer": "Pechenegs, the Bulgars, and especially the Seljuk Turks",
+    "context_id": "ctx_7"
+  },
+  {
+    "id": "5ad3dbc6604f3c001a3ff3eb",
+    "query": "Who did the Normans encourage to come to the south?",
+    "relevant_doc_ids": [
+      "ctx_7"
+    ],
+    "ground_truth_answer": "Lombards",
+    "context_id": "ctx_7"
+  },
+  {
+    "id": "5ad3dbc6604f3c001a3ff3ec",
+    "query": "During what campaign did the Vargian and Lombard fight?",
+    "relevant_doc_ids": [
+      "ctx_7"
+    ],
+    "ground_truth_answer": "the Sicilian campaign of George Maniaces",
+    "context_id": "ctx_7"
+  },
+  {
+    "id": "56de0ffd4396321400ee258d",
+    "query": "When did Herve serve as a Byzantine general?",
+    "relevant_doc_ids": [
+      "ctx_8"
+    ],
+    "ground_truth_answer": "1050s",
+    "context_id": "ctx_8"
+  },
+  {
+    "id": "56de0ffd4396321400ee258e",
+    "query": "When did Robert Crispin go up against the Turks?",
+    "relevant_doc_ids": [
+      "ctx_8"
+    ],
+    "ground_truth_answer": "1060s",
+    "context_id": "ctx_8"
+  },
+  {
+    "id": "56de0ffd4396321400ee258f",
+    "query": "Who ruined Roussel de Bailleul's plans for an independent state?",
+    "relevant_doc_ids": [
+      "ctx_8"
+    ],
+    "ground_truth_answer": "Alexius Komnenos",
+    "context_id": "ctx_8"
+  },
+  {
+    "id": "5ad3de8b604f3c001a3ff467",
+    "query": "Who was the first Byzantine mercenary to serve with the Normans?",
+    "relevant_doc_ids": [
+      "ctx_8"
+    ],
+    "ground_truth_answer": "Hervé",
+    "context_id": "ctx_8"
+  },
+  {
+    "id": "5ad3de8b604f3c001a3ff468",
+    "query": "When did Herve serve as a Norman general?",
+    "relevant_doc_ids": [
+      "ctx_8"
+    ],
+    "ground_truth_answer": "1050s",
+    "context_id": "ctx_8"
+  }
+]
