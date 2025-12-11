@@ -1,6 +1,10 @@
 """
 Vector Database Module - Quan ly Qdrant vector database cho retrieval
-Theo plan.pdf: su dung Qdrant thay vi ChromaDB/FAISS
+Ho tro:
+- Vector Search (semantic)
+- BM25 Search (keyword)
+- Hybrid Search (BM25 + Vector)
+- Reranking
 """
 
 from qdrant_client import QdrantClient
@@ -15,10 +19,118 @@ from qdrant_client.http.models import (
     Range
 )
 import numpy as np
-from typing import List, Dict, Optional, Union
+from typing import List, Dict, Optional, Union, Tuple
 from pathlib import Path
 from datetime import datetime
 import uuid
+import re
+from collections import Counter
+import math
+
+
+class BM25:
+    """
+    BM25 ranking algorithm for keyword search
+    """
+
+    def __init__(self, k1: float = 1.5, b: float = 0.75):
+        """
+        Args:
+            k1: Term frequency saturation parameter
+            b: Length normalization parameter
+        """
+        self.k1 = k1
+        self.b = b
+        self.corpus = []
+        self.doc_freqs = Counter()
+        self.idf = {}
+        self.doc_len = []
+        self.avgdl = 0
+        self.N = 0
+
+    def _tokenize(self, text: str) -> List[str]:
+        """Simple tokenization"""
+        text = text.lower()
+        # Remove punctuation and split
+        tokens = re.findall(r'\b\w+\b', text)
+        return tokens
+
+    def fit(self, documents: List[str]):
+        """
+        Fit BM25 on corpus
+
+        Args:
+            documents: List of document texts
+        """
+        self.corpus = []
+        self.doc_freqs = Counter()
+        self.doc_len = []
+
+        for doc in documents:
+            tokens = self._tokenize(doc)
+            self.corpus.append(tokens)
+            self.doc_len.append(len(tokens))
+
+            # Count document frequency
+            unique_tokens = set(tokens)
+            for token in unique_tokens:
+                self.doc_freqs[token] += 1
+
+        self.N = len(documents)
+        self.avgdl = sum(self.doc_len) / self.N if self.N > 0 else 0
+
+        # Calculate IDF
+        self.idf = {}
+        for token, df in self.doc_freqs.items():
+            self.idf[token] = math.log((self.N - df + 0.5) / (df + 0.5) + 1)
+
+    def get_scores(self, query: str) -> np.ndarray:
+        """
+        Get BM25 scores for query
+
+        Args:
+            query: Query text
+
+        Returns:
+            Array of scores for each document
+        """
+        query_tokens = self._tokenize(query)
+        scores = np.zeros(self.N)
+
+        for token in query_tokens:
+            if token not in self.idf:
+                continue
+
+            idf = self.idf[token]
+
+            for idx, doc_tokens in enumerate(self.corpus):
+                if token not in doc_tokens:
+                    continue
+
+                tf = doc_tokens.count(token)
+                doc_len = self.doc_len[idx]
+
+                # BM25 score
+                numerator = tf * (self.k1 + 1)
+                denominator = tf + self.k1 * (1 - self.b + self.b * doc_len / self.avgdl)
+                scores[idx] += idf * numerator / denominator
+
+        return scores
+
+    def get_top_k(self, query: str, k: int = 5) -> List[Tuple[int, float]]:
+        """
+        Get top-k documents
+
+        Args:
+            query: Query text
+            k: Number of results
+
+        Returns:
+            List of (doc_index, score) tuples
+        """
+        scores = self.get_scores(query)
+        top_indices = np.argsort(scores)[::-1][:k]
+        return [(int(idx), float(scores[idx])) for idx in top_indices if scores[idx] > 0]
 
 
 class VectorDatabase:
@@ -310,6 +422,175 @@ class VectorDatabase:
             candidates.pop(best_idx)
 
         return selected
+
+    def hybrid_search(
+        self,
+        query: str,
+        query_embedding: Union[List[float], np.ndarray],
+        top_k: int = 5,
+        alpha: float = 0.5,
+        filter_dict: Optional[Dict] = None
+    ) -> List[Dict]:
+        """
+        Hybrid Search: ket hop BM25 (keyword) va Vector (semantic) search
+
+        Args:
+            query: Query text (cho BM25)
+            query_embedding: Query embedding (cho vector search)
+            top_k: So luong ket qua tra ve
+            alpha: Trong so cho vector search (0-1), 1-alpha cho BM25
+            filter_dict: Bo loc metadata
+
+        Returns:
+            List documents da duoc rank theo hybrid score
+        """
+        # 1. Vector search
+        vector_results = self.search(
+            query_embedding=query_embedding,
+            top_k=top_k * 2,  # Fetch more for merging
+            filter_dict=filter_dict
+        )
+
+        # 2. BM25 search
+        # Get all documents for BM25
+        all_docs = self._get_all_documents()
+
+        if not all_docs:
+            return vector_results[:top_k]
+
+        # Build BM25 index
+        bm25 = BM25()
+        doc_texts = [d.get("text", "") for d in all_docs]
+        bm25.fit(doc_texts)
+
+        # Get BM25 scores
+        bm25_scores = bm25.get_scores(query)
+
+        # Normalize BM25 scores
+        max_bm25 = max(bm25_scores) if max(bm25_scores) > 0 else 1
+        bm25_scores_norm = bm25_scores / max_bm25
+
+        # 3. Combine scores
+        # Create score dict
+        combined_scores = {}
+
+        # Add vector search scores
+        for result in vector_results:
+            doc_id = result["id"]
+            combined_scores[doc_id] = {
+                "doc": result,
+                "vector_score": result["similarity"],
+                "bm25_score": 0.0
+            }
+
+        # Add BM25 scores
+        for idx, score in enumerate(bm25_scores_norm):
+            if score > 0:
+                doc_id = all_docs[idx].get("id", str(idx))
+                if doc_id in combined_scores:
+                    combined_scores[doc_id]["bm25_score"] = score
+                else:
+                    combined_scores[doc_id] = {
+                        "doc": all_docs[idx],
+                        "vector_score": 0.0,
+                        "bm25_score": score
+                    }
+
+        # Calculate hybrid scores
+        results = []
+        for doc_id, scores in combined_scores.items():
+            hybrid_score = alpha * scores["vector_score"] + (1 - alpha) * scores["bm25_score"]
+            doc = scores["doc"].copy()
+            doc["similarity"] = hybrid_score
+            doc["vector_score"] = scores["vector_score"]
+            doc["bm25_score"] = scores["bm25_score"]
+            results.append(doc)
+
+        # Sort by hybrid score
+        results.sort(key=lambda x: x["similarity"], reverse=True)
+
+        return results[:top_k]
+
+    def _get_all_documents(self, limit: int = 1000) -> List[Dict]:
+        """Get all documents from collection (for BM25)"""
+        try:
+            # Scroll through all points
+            results = []
+            offset = None
+
+            while True:
+                response = self.client.scroll(
+                    collection_name=self.collection_name,
+                    limit=100,
+                    offset=offset,
+                    with_payload=True,
+                    with_vectors=False
+                )
+
+                points, offset = response
+
+                for point in points:
+                    results.append({
+                        "id": str(point.id),
+                        "text": point.payload.get("text", ""),
+                        "metadata": {k: v for k, v in point.payload.items() if k != "text"}
+                    })
+
+                if offset is None or len(results) >= limit:
+                    break
+
+            return results
+        except Exception as e:
+            print(f"Error getting all documents: {e}")
+            return []
+
+    def search_with_rerank(
+        self,
+        query: str,
+        query_embedding: Union[List[float], np.ndarray],
+        reranker,
+        top_k: int = 5,
+        fetch_k: int = 20,
+        filter_dict: Optional[Dict] = None
+    ) -> List[Dict]:
+        """
+        Search with reranking using a reranker model
+
+        Args:
+            query: Query text
+            query_embedding: Query embedding
+            reranker: Reranker function/model that takes (query, docs) and returns scores
+            top_k: Final number of results
+            fetch_k: Number to fetch before reranking
+            filter_dict: Filter for initial search
+
+        Returns:
+            Reranked list of documents
+        """
+        # Initial retrieval
+        initial_results = self.search(
+            query_embedding=query_embedding,
+            top_k=fetch_k,
+            filter_dict=filter_dict
+        )
+
+        if len(initial_results) <= top_k:
+            return initial_results
+
+        # Rerank
+        doc_texts = [r["text"] for r in initial_results]
+        rerank_scores = reranker(query, doc_texts)
+
+        # Combine results with new scores
+        for i, result in enumerate(initial_results):
+            result["original_score"] = result["similarity"]
+            result["rerank_score"] = rerank_scores[i]
+            result["similarity"] = rerank_scores[i]
+
+        # Sort by rerank score
+        initial_results.sort(key=lambda x: x["similarity"], reverse=True)
+
+        return initial_results[:top_k]
 
     def get_collection_stats(self) -> Dict:
         """

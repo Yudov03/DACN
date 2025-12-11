@@ -171,16 +171,68 @@ def test_vector_db_inmemory():
         return False
 
 
+def test_embedding_local():
+    """Test Local Embedding module (Sentence-BERT/E5)"""
+    print("\n" + "=" * 60)
+    print("TEST 4a: Local Embedding Module (Sentence-BERT)")
+    print("=" * 60)
+
+    try:
+        from modules.embedding_module import TextEmbedding
+
+        print("Initializing LOCAL (Sentence-BERT) embedder...")
+        embedder = TextEmbedding(provider="local", model_name="sbert")
+
+        sample_texts = [
+            "Tri tue nhan tao dang phat trien",
+            "AI is developing rapidly",
+            "Hom nay troi dep"
+        ]
+
+        print("Encoding sample texts...")
+        embeddings = embedder.encode_text(sample_texts, show_progress=False)
+        print(f"Embeddings shape: {embeddings.shape}")
+        print(f"Embedding dimension: {embedder.embedding_dim}")
+
+        # Test similarity
+        sim_12 = embedder.compute_similarity(embeddings[0], embeddings[1])
+        sim_13 = embedder.compute_similarity(embeddings[0], embeddings[2])
+        print(f"Similarity (AI-vn, AI-en): {sim_12:.4f}")
+        print(f"Similarity (AI-vn, weather): {sim_13:.4f}")
+
+        # Test encode_query
+        query_emb = embedder.encode_query("AI la gi?")
+        print(f"Query embedding length: {len(query_emb)}")
+
+        print("\n[PASS] Local Embedding (Sentence-BERT) works correctly!")
+        return True
+    except Exception as e:
+        print(f"\n[FAIL] Local embedding error: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def test_embedding_module():
     """Test Embedding module (ho tro ca OpenAI va Google)"""
     print("\n" + "=" * 60)
-    print("TEST 4: Embedding Module (OpenAI/Google)")
+    print("TEST 4b: Cloud Embedding Module (OpenAI/Google)")
     print("=" * 60)
 
     # Check which provider to use
-    provider = os.getenv("EMBEDDING_PROVIDER", "google")
+    provider = os.getenv("EMBEDDING_PROVIDER", "local")
     google_key = os.getenv("GOOGLE_API_KEY")
     openai_key = os.getenv("OPENAI_API_KEY")
+
+    # Skip if using local provider and no cloud keys
+    if provider == "local":
+        if google_key:
+            provider = "google"
+        elif openai_key:
+            provider = "openai"
+        else:
+            print("[SKIP] No cloud API keys - local embedding tested above")
+            return None
 
     if provider == "google" and google_key:
         print(f"Using Google provider with key: {google_key[:10]}...")
@@ -295,7 +347,7 @@ def run_all_tests():
     """Run all tests"""
     print("\n" + "=" * 60)
     print("RUNNING ALL TESTS")
-    print("Qdrant + OpenAI Embeddings + LangChain")
+    print("Qdrant + Local/Cloud Embeddings + LangChain")
     print("=" * 60)
 
     results = {}
@@ -309,8 +361,11 @@ def run_all_tests():
     # Test 3: Qdrant in-memory
     results["qdrant_inmemory"] = test_vector_db_inmemory()
 
-    # Test 4: OpenAI Embedding (needs API key)
-    results["embedding"] = test_embedding_module()
+    # Test 4a: Local Embedding (Sentence-BERT/E5 - no API key needed)
+    results["embedding_local"] = test_embedding_local()
+
+    # Test 4b: Cloud Embedding (OpenAI/Google - needs API key)
+    results["embedding_cloud"] = test_embedding_module()
 
     # Test 5: Full pipeline mock
     results["pipeline_mock"] = test_full_pipeline_mock()

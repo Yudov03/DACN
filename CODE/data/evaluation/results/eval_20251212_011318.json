@@ -1,0 +1,29 @@
+{
+  "timestamp": "2025-12-12 01:13:18",
+  "config": {
+    "embedding_model": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+    "embedding_provider": "local",
+    "num_test_samples": 8
+  },
+  "retrieval": {
+    "mrr": 0.78125,
+    "avg_latency_ms": 120.87911367416382,
+    "precision@1": 0.625,
+    "recall@1": 0.625,
+    "ndcg@1": 0.625,
+    "hit_rate@1": 0.625,
+    "precision@3": 0.29166666666666663,
+    "recall@3": 0.875,
+    "ndcg@3": 0.7827324383928644,
+    "hit_rate@3": 0.875,
+    "precision@5": 0.2,
+    "recall@5": 1.0,
+    "ndcg@5": 0.8365670081520385,
+    "hit_rate@5": 1.0
+  },
+  "generation": {
+    "f1_score": 0.6809381581805156,
+    "bleu_score": 0.3910523508124508,
+    "semantic_similarity": 0.796794902635775
+  }
+}

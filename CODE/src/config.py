@@ -30,10 +30,12 @@ class Config:
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 
     # ========================
-    # Provider Selection (openai or google)
+    # Provider Selection
     # ========================
-    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "google")  # openai or google
-    EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "google")  # openai or google
+    # LLM: "ollama" (local), "openai", or "google"
+    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama")
+    # Embedding: "local" (Sentence-BERT/E5), "openai", or "google"
+    EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "local")
 
     # ========================
     # Qdrant Configuration
@@ -61,22 +63,40 @@ class Config:
     GOOGLE_EMBEDDING_DIMENSION = int(os.getenv("GOOGLE_EMBEDDING_DIMENSION", "768"))
     GOOGLE_LLM_MODEL = os.getenv("GOOGLE_LLM_MODEL", "gemini-2.0-flash")
 
+    # Local Embedding Models (Sentence-BERT/E5)
+    LOCAL_EMBEDDING_MODEL = os.getenv(
+        "LOCAL_EMBEDDING_MODEL",
+        "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+    )
+    LOCAL_EMBEDDING_DIMENSION = int(os.getenv("LOCAL_EMBEDDING_DIMENSION", "768"))
+    LOCAL_EMBEDDING_DEVICE = os.getenv("LOCAL_EMBEDDING_DEVICE", None)  # None = auto (cuda if available)
+
+    # Ollama LLM Configuration
+    OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
+
     # Active model (based on provider)
     @classmethod
     def get_embedding_model(cls):
-        if cls.EMBEDDING_PROVIDER == "google":
+        if cls.EMBEDDING_PROVIDER == "local":
+            return cls.LOCAL_EMBEDDING_MODEL
+        elif cls.EMBEDDING_PROVIDER == "google":
             return cls.GOOGLE_EMBEDDING_MODEL
         return cls.OPENAI_EMBEDDING_MODEL
 
     @classmethod
     def get_embedding_dimension(cls):
-        if cls.EMBEDDING_PROVIDER == "google":
+        if cls.EMBEDDING_PROVIDER == "local":
+            return cls.LOCAL_EMBEDDING_DIMENSION
+        elif cls.EMBEDDING_PROVIDER == "google":
             return cls.GOOGLE_EMBEDDING_DIMENSION
         return cls.OPENAI_EMBEDDING_DIMENSION
 
     @classmethod
     def get_llm_model(cls):
-        if cls.LLM_PROVIDER == "google":
+        if cls.LLM_PROVIDER == "ollama":
+            return cls.OLLAMA_MODEL
+        elif cls.LLM_PROVIDER == "google":
             return cls.GOOGLE_LLM_MODEL
         return cls.OPENAI_LLM_MODEL
 
@@ -143,12 +163,19 @@ Tra loi:"""
     def validate(cls):
         """Kiem tra cau hinh co hop le khong"""
         # Check API key based on provider
+        # Local/Ollama doesn't need API key
         if cls.LLM_PROVIDER == "google" or cls.EMBEDDING_PROVIDER == "google":
             if not cls.GOOGLE_API_KEY:
                 print("WARNING: GOOGLE_API_KEY chua duoc cau hinh!")
         if cls.LLM_PROVIDER == "openai" or cls.EMBEDDING_PROVIDER == "openai":
             if not cls.OPENAI_API_KEY:
                 print("WARNING: OPENAI_API_KEY chua duoc cau hinh!")
+
+        # Info about local providers
+        if cls.EMBEDDING_PROVIDER == "local":
+            print(f"INFO: Using local embedding: {cls.LOCAL_EMBEDDING_MODEL}")
+        if cls.LLM_PROVIDER == "ollama":
+            print(f"INFO: Using Ollama LLM: {cls.OLLAMA_MODEL} at {cls.OLLAMA_BASE_URL}")
 
         cls.ensure_directories()
         return True

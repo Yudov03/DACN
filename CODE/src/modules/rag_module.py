@@ -1,6 +1,8 @@
 """
 RAG Module - Retrieval-Augmented Generation
-Ho tro ca OpenAI va Google LLM thong qua LangChain
+Ho tro nhieu providers:
+- Local: Ollama (llama3.2, mistral, qwen2.5, ...)
+- Cloud: OpenAI, Google (LangChain)
 """
 
 from typing import List, Dict, Optional, Union
@@ -13,9 +15,34 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.documents import Document
 
 
+# Supported Ollama models with descriptions
+OLLAMA_MODELS = {
+    # Llama models
+    "llama3.2": "Meta Llama 3.2 (3B) - Fast, good for general tasks",
+    "llama3.2:1b": "Meta Llama 3.2 (1B) - Very fast, lightweight",
+    "llama3.1": "Meta Llama 3.1 (8B) - Better quality, slower",
+    "llama3.1:70b": "Meta Llama 3.1 (70B) - Best quality, requires high VRAM",
+    # Mistral models
+    "mistral": "Mistral 7B - Good balance of speed and quality",
+    "mistral-nemo": "Mistral Nemo (12B) - Better reasoning",
+    # Qwen models (good for multilingual/Vietnamese)
+    "qwen2.5": "Qwen 2.5 (7B) - Excellent multilingual support",
+    "qwen2.5:3b": "Qwen 2.5 (3B) - Fast multilingual",
+    "qwen2.5:14b": "Qwen 2.5 (14B) - Better quality multilingual",
+    # Gemma models
+    "gemma2": "Google Gemma 2 (9B) - Good general purpose",
+    "gemma2:2b": "Google Gemma 2 (2B) - Very fast",
+    # Phi models (Microsoft)
+    "phi3": "Microsoft Phi-3 (3.8B) - Efficient, good reasoning",
+    # Vietnamese-optimized
+    "vinallama": "VinaLlama - Vietnamese fine-tuned",
+}
+
+
 class RAGSystem:
     """
-    He thong RAG ho tro ca OpenAI va Google LLM
+    He thong RAG ho tro nhieu providers:
+    - Local (Ollama): llama3.2, mistral, qwen2.5, ...
     - OpenAI: gpt-4, gpt-4o, gpt-4o-mini
     - Google: gemini-1.5-flash, gemini-1.5-pro, gemini-2.0-flash
     """
@@ -25,11 +52,12 @@ class RAGSystem:
         vector_db,
         embedder,
         llm_model: Optional[str] = None,
-        provider: str = "google",  # "openai" or "google"
+        provider: str = "ollama",  # "ollama", "openai", or "google"
         api_key: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: int = 500,
-        top_k: int = 5
+        top_k: int = 5,
+        ollama_base_url: str = "http://localhost:11434"
     ):
         """
         Khoi tao RAG System
@@ -38,11 +66,12 @@ class RAGSystem:
             vector_db: VectorDatabase instance (Qdrant)
             embedder: TextEmbedding instance
             llm_model: Ten model LLM (neu None se dung default theo provider)
-            provider: "openai" hoac "google"
-            api_key: API key (neu khong truyen se lay tu env)
+            provider: "ollama" (local), "openai", hoac "google"
+            api_key: API key (chi can cho openai/google)
             temperature: Temperature cho LLM
             max_tokens: Max tokens cho response
             top_k: So luong chunks retrieve
+            ollama_base_url: URL cua Ollama server (default: http://localhost:11434)
         """
         self.vector_db = vector_db
         self.embedder = embedder
@@ -50,27 +79,33 @@ class RAGSystem:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.top_k = top_k
+        self.ollama_base_url = ollama_base_url
 
         # Default models
         if llm_model is None:
-            if self.provider == "google":
+            if self.provider == "ollama":
+                llm_model = "llama3.2"
+            elif self.provider == "google":
                 llm_model = "gemini-2.0-flash"
             else:
                 llm_model = "gpt-4o-mini"
 
         self.llm_model = llm_model
 
-        # Get API key
-        if api_key:
-            self.api_key = api_key
-        elif self.provider == "google":
-            self.api_key = os.getenv("GOOGLE_API_KEY")
-        else:
-            self.api_key = os.getenv("OPENAI_API_KEY")
+        # Get API key (only needed for cloud providers)
+        if self.provider in ["openai", "google"]:
+            if api_key:
+                self.api_key = api_key
+            elif self.provider == "google":
+                self.api_key = os.getenv("GOOGLE_API_KEY")
+            else:
+                self.api_key = os.getenv("OPENAI_API_KEY")
 
-        if not self.api_key:
-            key_name = "GOOGLE_API_KEY" if self.provider == "google" else "OPENAI_API_KEY"
-            raise ValueError(f"{key_name} chua duoc cau hinh!")
+            if not self.api_key:
+                key_name = "GOOGLE_API_KEY" if self.provider == "google" else "OPENAI_API_KEY"
+                raise ValueError(f"{key_name} chua duoc cau hinh!")
+        else:
+            self.api_key = None
 
         # Initialize LLM
         self._init_llm()
@@ -84,7 +119,10 @@ class RAGSystem:
         """Initialize LLM based on provider"""
         print(f"Dang khoi tao {self.provider.upper()} LLM '{self.llm_model}'...")
 
-        if self.provider == "google":
+        if self.provider == "ollama":
+            self._init_ollama_llm()
+
+        elif self.provider == "google":
             from langchain_google_genai import ChatGoogleGenerativeAI
 
             self.llm = ChatGoogleGenerativeAI(
@@ -102,6 +140,81 @@ class RAGSystem:
                 max_tokens=self.max_tokens,
                 openai_api_key=self.api_key
             )
+
+    def _init_ollama_llm(self):
+        """Initialize Ollama local LLM"""
+        try:
+            from langchain_ollama import ChatOllama
+        except ImportError:
+            raise ImportError(
+                "langchain-ollama chua duoc cai dat. "
+                "Chay: pip install langchain-ollama"
+            )
+
+        # Check if Ollama server is running
+        if not self._check_ollama_server():
+            raise ConnectionError(
+                f"Khong the ket noi toi Ollama server tai {self.ollama_base_url}. "
+                "Hay chac chan Ollama dang chay: ollama serve"
+            )
+
+        # Check if model is available
+        if not self._check_ollama_model():
+            print(f"Model '{self.llm_model}' chua duoc tai. Dang pull...")
+            self._pull_ollama_model()
+
+        self.llm = ChatOllama(
+            model=self.llm_model,
+            temperature=self.temperature,
+            num_predict=self.max_tokens,
+            base_url=self.ollama_base_url
+        )
+
+    def _check_ollama_server(self) -> bool:
+        """Check if Ollama server is running"""
+        import requests
+        try:
+            response = requests.get(f"{self.ollama_base_url}/api/tags", timeout=5)
+            return response.status_code == 200
+        except Exception:
+            return False
+
+    def _check_ollama_model(self) -> bool:
+        """Check if model is available in Ollama"""
+        import requests
+        try:
+            response = requests.get(f"{self.ollama_base_url}/api/tags", timeout=5)
+            if response.status_code == 200:
+                models = response.json().get("models", [])
+                model_names = [m.get("name", "").split(":")[0] for m in models]
+                # Check both exact name and base name
+                base_model = self.llm_model.split(":")[0]
+                return self.llm_model in model_names or base_model in model_names
+            return False
+        except Exception:
+            return False
+
+    def _pull_ollama_model(self):
+        """Pull model from Ollama registry"""
+        import requests
+        print(f"Dang tai model '{self.llm_model}' tu Ollama... (co the mat vai phut)")
+        try:
+            response = requests.post(
+                f"{self.ollama_base_url}/api/pull",
+                json={"name": self.llm_model},
+                stream=True,
+                timeout=600  # 10 minutes timeout for large models
+            )
+            for line in response.iter_lines():
+                if line:
+                    import json as json_lib
+                    data = json_lib.loads(line)
+                    status = data.get("status", "")
+                    if "pulling" in status or "downloading" in status:
+                        print(f"  {status}")
+            print(f"Da tai xong model '{self.llm_model}'")
+        except Exception as e:
+            raise RuntimeError(f"Loi khi tai model: {e}")
 
     def _get_default_prompt_template(self) -> PromptTemplate:
         """Tao prompt template mac dinh"""
@@ -332,10 +445,70 @@ Tra loi:"""
         }
 
 
+# Utility functions
+def list_ollama_models():
+    """List all supported Ollama models"""
+    print("\n=== SUPPORTED OLLAMA MODELS ===\n")
+    for model, desc in OLLAMA_MODELS.items():
+        print(f"  {model}: {desc}")
+    print("\nCach su dung:")
+    print("  1. Cai dat Ollama: https://ollama.ai/download")
+    print("  2. Chay Ollama: ollama serve")
+    print("  3. Tai model: ollama pull llama3.2")
+    print("  4. Dung trong code: RAGSystem(provider='ollama', llm_model='llama3.2')")
+
+
+def check_ollama_status(base_url: str = "http://localhost:11434") -> Dict:
+    """Check Ollama server status and available models"""
+    import requests
+
+    status = {
+        "server_running": False,
+        "available_models": [],
+        "base_url": base_url
+    }
+
+    try:
+        response = requests.get(f"{base_url}/api/tags", timeout=5)
+        if response.status_code == 200:
+            status["server_running"] = True
+            models = response.json().get("models", [])
+            status["available_models"] = [m.get("name", "") for m in models]
+    except Exception as e:
+        status["error"] = str(e)
+
+    return status
+
+
 # Test function
 if __name__ == "__main__":
-    print("RAG Module initialized successfully!")
-    print("Supported providers: openai, google")
-    print("\nOpenAI models: gpt-4, gpt-4o, gpt-4o-mini")
-    print("Google models: gemini-1.5-flash, gemini-1.5-pro, gemini-2.0-flash")
-    print("\nNote: Can setup VectorDB, Embedder va API key de test day du")
+    print("=" * 60)
+    print("RAG Module - Multi-provider LLM Support")
+    print("=" * 60)
+
+    print("\nSupported providers:")
+    print("  - ollama (local): Free, offline, privacy-friendly")
+    print("  - google (cloud): High quality, requires API key")
+    print("  - openai (cloud): High quality, requires API key")
+
+    print("\n--- OLLAMA MODELS ---")
+    list_ollama_models()
+
+    print("\n--- CLOUD MODELS ---")
+    print("\nOpenAI: gpt-4, gpt-4o, gpt-4o-mini")
+    print("Google: gemini-1.5-flash, gemini-1.5-pro, gemini-2.0-flash")
+
+    # Check Ollama status
+    print("\n--- OLLAMA STATUS ---")
+    status = check_ollama_status()
+    if status["server_running"]:
+        print(f"Ollama server: RUNNING at {status['base_url']}")
+        if status["available_models"]:
+            print(f"Available models: {', '.join(status['available_models'])}")
+        else:
+            print("No models installed. Run: ollama pull llama3.2")
+    else:
+        print("Ollama server: NOT RUNNING")
+        print("To start: ollama serve")
+
+    print("\n" + "=" * 60)
