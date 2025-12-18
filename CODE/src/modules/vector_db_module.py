@@ -140,12 +140,12 @@ class VectorDatabase:
 
     def __init__(
         self,
-        host: str = "localhost",
-        port: int = 6333,
+        host: str = None,
+        port: int = None,
         url: Optional[str] = None,
         api_key: Optional[str] = None,
-        collection_name: str = "audio_transcripts",
-        embedding_dimension: int = 1536,
+        collection_name: str = None,
+        embedding_dimension: int = None,
         distance_metric: str = "cosine"
     ):
         """
@@ -160,8 +160,14 @@ class VectorDatabase:
             embedding_dimension: Dimension cua embeddings (1536 cho text-embedding-3-small)
             distance_metric: Distance metric (cosine, euclid, dot)
         """
-        self.collection_name = collection_name
-        self.embedding_dimension = embedding_dimension
+        import os
+        # Read from .env with defaults
+        self.collection_name = collection_name or os.getenv("COLLECTION_NAME", "audio_transcripts")
+        self.embedding_dimension = embedding_dimension or int(os.getenv("LOCAL_EMBEDDING_DIMENSION", 768))
+        host = host or os.getenv("QDRANT_HOST", "localhost")
+        port = port or int(os.getenv("QDRANT_PORT", 6333))
+        url = url or os.getenv("QDRANT_URL")
+        api_key = api_key or os.getenv("QDRANT_API_KEY")
 
         # Map distance metric
         distance_map = {
@@ -620,6 +626,18 @@ class VectorDatabase:
         """Xoa collection"""
         self.client.delete_collection(collection_name=self.collection_name)
         print(f"Da xoa collection '{self.collection_name}'")
+
+    def create_collection(self):
+        """Tao lai collection (sau khi xoa)"""
+        from qdrant_client.models import VectorParams
+        self.client.create_collection(
+            collection_name=self.collection_name,
+            vectors_config=VectorParams(
+                size=self.embedding_dimension,
+                distance=self.distance
+            )
+        )
+        print(f"Da tao lai collection '{self.collection_name}'")
 
     def delete_by_filter(self, filter_dict: Dict) -> int:
         """

@@ -40,8 +40,8 @@ ENV/
 data/audio/*
 data/transcripts/*
 data/vector_db/*
+data/cache/*
 outputs/*
-*.mp3
 *.wav
 *.m4a
 *.flac

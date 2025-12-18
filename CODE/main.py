@@ -1,439 +1,725 @@
 """
-Main Pipeline - He thong Truy xuat Thong tin Da phuong thuc tu Am thanh
-Ho tro ca OpenAI va Google (Gemini) - su dung Qdrant + LangChain
+Main CLI - Multimodal Information Retrieval System
+===================================================
+
+CLI interface for processing documents, audio, video and querying with RAG.
+Supports 34 file formats with anti-hallucination and TTS output.
+
+Usage:
+    python main.py --mode process --input data/documents/
+    python main.py --mode query --question "What is...?"
+    python main.py --mode interactive
+    python main.py --mode stats
 """
 
 import sys
+import io
 from pathlib import Path
+
+# Fix Windows encoding
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from config import Config
-from modules import WhisperASR, TextChunker, TextEmbedding, VectorDatabase, RAGSystem
 import argparse
 import json
 from typing import List, Optional
+from datetime import datetime
+
+from dotenv import load_dotenv
+load_dotenv(override=True)
+
+from config import Config
 
 
-class AudioIRPipeline:
+class MultimodalIRPipeline:
     """
-    Pipeline chinh cho he thong IR tu audio
-    Ho tro ca OpenAI va Google - Qdrant + LangChain
+    Main pipeline for Multimodal Information Retrieval system.
+
+    Supports:
+    - 34 file formats (documents, audio, video, images, code)
+    - Local (SBERT/E5) and Cloud (OpenAI/Google) embeddings
+    - Hybrid search (Vector + BM25) with optional reranking
+    - Anti-hallucination (verification, conflict detection, abstention)
+    - Text-to-Speech output
     """
 
     def __init__(
         self,
-        whisper_model: str = None,
-        embedding_model: str = None,
-        llm_model: str = None,
-        qdrant_host: str = None,
-        qdrant_port: int = None,
-        qdrant_url: str = None,
+        embedding_provider: str = None,
         llm_provider: str = None,
-        embedding_provider: str = None
+        use_reranker: bool = False,
+        use_anti_hallucination: bool = True,
+        verbose: bool = True
     ):
         """
-        Khoi tao pipeline
+        Initialize pipeline.
 
         Args:
-            whisper_model: Ten model Whisper
-            embedding_model: Ten model embedding
-            llm_model: Ten model LLM
-            qdrant_host: Qdrant host
-            qdrant_port: Qdrant port
-            qdrant_url: Qdrant Cloud URL
-            llm_provider: Provider cho LLM (openai/google)
-            embedding_provider: Provider cho embedding (openai/google)
+            embedding_provider: local, google, or openai
+            llm_provider: ollama, google, or openai
+            use_reranker: Enable cross-encoder reranking
+            use_anti_hallucination: Enable answer verification
+            verbose: Print initialization progress
         """
-        # Provider config
-        self.llm_provider = llm_provider or Config.LLM_PROVIDER
         self.embedding_provider = embedding_provider or Config.EMBEDDING_PROVIDER
+        self.llm_provider = llm_provider or Config.LLM_PROVIDER
+        self.use_reranker = use_reranker
+        self.use_anti_hallucination = use_anti_hallucination
+        self.verbose = verbose
 
-        # Use config values or override based on provider
-        self.whisper_model = whisper_model or Config.WHISPER_MODEL
+        if verbose:
+            print("=" * 70)
+            print("MULTIMODAL INFORMATION RETRIEVAL SYSTEM")
+            print(f"Embedding: {self.embedding_provider.upper()} | LLM: {self.llm_provider.upper()}")
+            print("=" * 70)
 
-        # Get model names based on provider
-        if embedding_model:
-            self.embedding_model = embedding_model
-        elif self.embedding_provider == "google":
-            self.embedding_model = Config.GOOGLE_EMBEDDING_MODEL
-        else:
-            self.embedding_model = Config.OPENAI_EMBEDDING_MODEL
-
-        if llm_model:
-            self.llm_model = llm_model
-        elif self.llm_provider == "google":
-            self.llm_model = Config.GOOGLE_LLM_MODEL
-        else:
-            self.llm_model = Config.OPENAI_LLM_MODEL
-
-        # Qdrant config
-        qdrant_config = Config.get_qdrant_config()
-        self.qdrant_host = qdrant_host or qdrant_config.get("host", "localhost")
-        self.qdrant_port = qdrant_port or qdrant_config.get("port", 6333)
-        self.qdrant_url = qdrant_url or qdrant_config.get("url")
-
-        print("=" * 80)
-        print("KHOI TAO HE THONG AUDIO INFORMATION RETRIEVAL")
-        print(f"LLM Provider: {self.llm_provider.upper()} | Embedding Provider: {self.embedding_provider.upper()}")
-        print("=" * 80)
-
-        # Initialize components
         self._init_components()
 
-        print("\nHe thong da san sang!")
-        print("=" * 80)
+        if verbose:
+            print("\nSystem ready!")
+            print("=" * 70)
 
     def _init_components(self):
-        """Khoi tao cac components cua he thong"""
-
-        # Get API key based on provider
-        api_key = Config.get_api_key(self.embedding_provider)
-        llm_api_key = Config.get_api_key(self.llm_provider)
-
-        # Get embedding dimension based on provider
-        if self.embedding_provider == "google":
-            embedding_dim = Config.GOOGLE_EMBEDDING_DIMENSION
-        else:
-            embedding_dim = Config.OPENAI_EMBEDDING_DIMENSION
-
-        # 1. ASR Module
-        print("\n[1/5] Khoi tao ASR Module (Whisper)...")
-        self.asr = WhisperASR(
-            model_name=self.whisper_model,
-            device=Config.WHISPER_DEVICE
+        """Initialize all system components."""
+        from modules import (
+            TextEmbedding, VectorDatabase, RAGSystem,
+            UnifiedProcessor, TextChunker, KnowledgeBase,
+            PromptTemplateManager
         )
 
-        # 2. Chunking Module (LangChain)
-        print("\n[2/5] Khoi tao Chunking Module (LangChain)...")
+        # 1. Document Processor
+        if self.verbose:
+            print("\n[1/6] Initializing Document Processor (34 formats)...")
+        self.processor = UnifiedProcessor()
+
+        # 2. Text Chunker
+        if self.verbose:
+            print("[2/6] Initializing Text Chunker...")
         self.chunker = TextChunker(
             chunk_size=Config.CHUNK_SIZE,
             chunk_overlap=Config.CHUNK_OVERLAP,
-            method=Config.CHUNKING_METHOD,
-            api_key=api_key,
-            embedding_provider=self.embedding_provider
+            method=Config.CHUNKING_METHOD
         )
 
-        # 3. Embedding Module
-        print(f"\n[3/5] Khoi tao Embedding Module ({self.embedding_provider.upper()})...")
+        # 3. Embedding
+        if self.verbose:
+            print(f"[3/6] Initializing Embedder ({self.embedding_provider})...")
         self.embedder = TextEmbedding(
-            model_name=self.embedding_model,
             provider=self.embedding_provider,
-            api_key=api_key,
-            cache_dir=str(Config.DATA_DIR / "embedding_cache")
+            model_name=self._get_embedding_model()
         )
 
-        # 4. Vector Database (Qdrant)
-        print("\n[4/5] Khoi tao Vector Database (Qdrant)...")
+        # 4. Vector Database
+        if self.verbose:
+            print("[4/6] Initializing Vector Database (Qdrant + BM25)...")
         self.vector_db = VectorDatabase(
-            host=self.qdrant_host,
-            port=self.qdrant_port,
-            url=self.qdrant_url,
-            api_key=Config.QDRANT_API_KEY,
             collection_name=Config.COLLECTION_NAME,
-            embedding_dimension=embedding_dim
+            embedding_dimension=self.embedder.embedding_dim
         )
 
-        # 5. RAG System (LangChain)
-        print(f"\n[5/5] Khoi tao RAG System ({self.llm_provider.upper()})...")
+        # 5. RAG System
+        if self.verbose:
+            print(f"[5/6] Initializing RAG System ({self.llm_provider})...")
         self.rag = RAGSystem(
             vector_db=self.vector_db,
             embedder=self.embedder,
-            llm_model=self.llm_model,
             provider=self.llm_provider,
-            api_key=llm_api_key,
-            temperature=Config.LLM_TEMPERATURE,
-            max_tokens=Config.LLM_MAX_TOKENS,
-            top_k=Config.TOP_K
+            top_k=Config.TOP_K,
+            temperature=Config.LLM_TEMPERATURE
         )
 
-    def process_audio(
-        self,
-        audio_path: str,
-        save_intermediate: bool = True
-    ) -> dict:
+        # 6. Prompt Templates
+        if self.verbose:
+            print("[6/6] Loading Prompt Templates...")
+        self.prompt_manager = PromptTemplateManager(language="vi")
+
+        # Optional: Reranker
+        self.reranker = None
+        if self.use_reranker:
+            try:
+                from modules import CrossEncoderReranker
+                self.reranker = CrossEncoderReranker()
+                if self.verbose:
+                    print("[+] Reranker enabled")
+            except Exception as e:
+                if self.verbose:
+                    print(f"[!] Reranker not available: {e}")
+
+        # Optional: Anti-hallucination
+        self.verifier = None
+        self.abstention_checker = None
+        self.conflict_detector = None
+        if self.use_anti_hallucination:
+            try:
+                from modules import AnswerVerifier, AbstentionChecker, ConflictDetector
+                self.verifier = AnswerVerifier()
+                self.abstention_checker = AbstentionChecker(min_retrieval_score=0.4)
+                self.conflict_detector = ConflictDetector()
+                if self.verbose:
+                    print("[+] Anti-hallucination enabled")
+            except Exception as e:
+                if self.verbose:
+                    print(f"[!] Anti-hallucination not available: {e}")
+
+        # Optional: TTS
+        self.tts = None
+        try:
+            from modules import TextToSpeech
+            self.tts = TextToSpeech(voice="vi-female")
+            if self.verbose:
+                print("[+] TTS enabled")
+        except Exception as e:
+            if self.verbose:
+                print(f"[!] TTS not available: {e}")
+
+    def _get_embedding_model(self) -> str:
+        """Get embedding model name based on provider."""
+        if self.embedding_provider == "local":
+            return getattr(Config, 'LOCAL_EMBEDDING_MODEL', 'e5')
+        elif self.embedding_provider == "google":
+            return Config.GOOGLE_EMBEDDING_MODEL
+        else:
+            return Config.OPENAI_EMBEDDING_MODEL
+
+    def process_file(self, file_path: str, tags: List[str] = None) -> dict:
         """
-        Xu ly mot file audio: ASR -> Chunking -> Embedding -> Store
+        Process a single file: Extract -> Chunk -> Embed -> Store.
 
         Args:
-            audio_path: Duong dan file audio
-            save_intermediate: Co luu ket qua trung gian khong
+            file_path: Path to the file
+            tags: Optional tags for the document
 
         Returns:
-            Dict chua thong tin xu ly
+            Processing result dict
         """
-        audio_path = Path(audio_path)
-        print(f"\n{'=' * 80}")
-        print(f"XU LY AUDIO: {audio_path.name}")
-        print(f"{'=' * 80}")
+        file_path = Path(file_path)
 
-        # Step 1: ASR
-        print("\n[Step 1/4] Transcribing audio...")
-        transcript_data = self.asr.transcribe_audio(audio_path)
+        if self.verbose:
+            print(f"\n{'=' * 70}")
+            print(f"PROCESSING: {file_path.name}")
+            print(f"{'=' * 70}")
 
-        if save_intermediate:
-            transcript_file = Config.TRANSCRIPT_DIR / f"{audio_path.stem}_transcript.json"
-            self.asr.save_transcript(transcript_data, transcript_file)
+        # Step 1: Extract content
+        if self.verbose:
+            print("\n[1/4] Extracting content...")
 
-        # Step 2: Chunking
-        print("\n[Step 2/4] Chunking transcript...")
-        chunks = self.chunker.chunk_transcript(
-            transcript_data,
-            preserve_timestamps=True
-        )
-        print(f"Da tao {len(chunks)} chunks")
+        try:
+            result = self.processor.process(str(file_path))
+            if not result or not result.content:
+                return {"file": str(file_path), "error": "No content extracted"}
+        except Exception as e:
+            return {"file": str(file_path), "error": str(e)}
 
-        # Step 3: Embedding
-        print("\n[Step 3/4] Creating embeddings (OpenAI)...")
-        chunks_with_embeddings = self.embedder.encode_chunks(chunks)
+        # Step 2: Chunk
+        if self.verbose:
+            print("[2/4] Chunking text...")
 
-        # Step 4: Store in Qdrant
-        print("\n[Step 4/4] Storing in Qdrant...")
-        num_stored = self.vector_db.add_documents(chunks_with_embeddings)
+        metadata = {
+            "source": file_path.name,
+            "file_type": file_path.suffix.lower(),
+            "processed_at": datetime.now().isoformat()
+        }
+        if tags:
+            metadata["tags"] = tags
+        if hasattr(result, 'metadata') and result.metadata:
+            metadata.update(result.metadata.extra or {})
 
-        print(f"\nHoan thanh! Da xu ly va luu {num_stored} chunks tu {audio_path.name}")
+        chunks = self.chunker.chunk_text(result.content, metadata=metadata)
+
+        if self.verbose:
+            print(f"    Created {len(chunks)} chunks")
+
+        # Step 3: Embed
+        if self.verbose:
+            print("[3/4] Creating embeddings...")
+
+        for chunk in chunks:
+            embedding = self.embedder.encode_text(chunk["text"])
+            chunk["embedding"] = embedding.tolist()
+
+        # Step 4: Store
+        if self.verbose:
+            print("[4/4] Storing in vector database...")
+
+        self.vector_db.add_documents(chunks)
+
+        if self.verbose:
+            print(f"\nDone! Processed {len(chunks)} chunks from {file_path.name}")
 
         return {
-            "audio_file": str(audio_path),
+            "file": str(file_path),
             "num_chunks": len(chunks),
-            "num_stored": num_stored,
-            "transcript_data": transcript_data
+            "content_length": len(result.content),
+            "file_type": file_path.suffix.lower()
         }
 
-    def process_audio_batch(
-        self,
-        audio_files: List[str],
-        save_intermediate: bool = True
-    ) -> List[dict]:
+    def process_directory(self, dir_path: str, tags: List[str] = None) -> List[dict]:
         """
-        Xu ly nhieu file audio
+        Process all supported files in a directory.
 
         Args:
-            audio_files: List duong dan cac file audio
-            save_intermediate: Co luu ket qua trung gian khong
+            dir_path: Path to directory
+            tags: Optional tags for all documents
 
         Returns:
-            List cac ket qua xu ly
+            List of processing results
         """
+        dir_path = Path(dir_path)
+        supported = self.processor.supported_extensions()
+
+        files = []
+        for ext in supported:
+            files.extend(dir_path.glob(f"*{ext}"))
+
+        if not files:
+            print(f"No supported files found in {dir_path}")
+            return []
+
+        print(f"\nFound {len(files)} files to process")
+
         results = []
+        for i, file_path in enumerate(files, 1):
+            print(f"\n[{i}/{len(files)}] ", end="")
+            result = self.process_file(str(file_path), tags)
+            results.append(result)
 
-        for i, audio_file in enumerate(audio_files, 1):
-            print(f"\n\n{'#' * 80}")
-            print(f"FILE {i}/{len(audio_files)}")
-            print(f"{'#' * 80}")
-
-            try:
-                result = self.process_audio(audio_file, save_intermediate)
-                results.append(result)
-            except Exception as e:
-                print(f"Loi khi xu ly {audio_file}: {str(e)}")
-                results.append({
-                    "audio_file": str(audio_file),
-                    "error": str(e)
-                })
+        # Summary
+        success = sum(1 for r in results if "error" not in r)
+        print(f"\n{'=' * 70}")
+        print(f"SUMMARY: {success}/{len(files)} files processed successfully")
+        print(f"{'=' * 70}")
 
         return results
 
     def query(
         self,
         question: str,
-        top_k: Optional[int] = None,
-        verbose: bool = True,
-        use_mmr: bool = False
+        top_k: int = None,
+        use_hybrid: bool = True,
+        alpha: float = 0.7,
+        with_tts: bool = False,
+        template: str = "strict_qa"
     ) -> dict:
         """
-        Thuc hien query tren he thong
+        Query the system with anti-hallucination checks.
 
         Args:
-            question: Cau hoi
-            top_k: So luong chunks retrieve
-            verbose: Hien thi chi tiet
-            use_mmr: Su dung MMR de tang diversity
+            question: The question to ask
+            top_k: Number of chunks to retrieve
+            use_hybrid: Use hybrid search (vector + BM25)
+            alpha: Weight for vector search in hybrid
+            with_tts: Generate TTS audio for answer
+            template: Prompt template to use
 
         Returns:
-            Response tu RAG system
+            Response dict with answer, sources, verification
         """
-        if verbose:
-            print(f"\n{'=' * 80}")
+        top_k = top_k or Config.TOP_K
+
+        if self.verbose:
+            print(f"\n{'=' * 70}")
             print(f"QUERY: {question}")
-            print(f"{'=' * 80}")
+            print(f"{'=' * 70}")
 
-        response = self.rag.query(
-            question=question,
-            top_k=top_k,
-            return_sources=True,
-            use_mmr=use_mmr
-        )
+        # Step 1: Retrieve
+        if self.verbose:
+            print("\n[1/4] Retrieving relevant chunks...")
 
-        if verbose:
+        query_embedding = self.embedder.encode_query(question)
+
+        if use_hybrid:
+            if self.reranker:
+                results = self.vector_db.search_with_rerank(
+                    query=question,
+                    query_embedding=query_embedding,
+                    reranker=self.reranker,
+                    top_k=top_k
+                )
+            else:
+                results = self.vector_db.hybrid_search(
+                    query=question,
+                    query_embedding=query_embedding,
+                    alpha=alpha,
+                    top_k=top_k
+                )
+        else:
+            results = self.vector_db.search(
+                query_embedding=query_embedding,
+                top_k=top_k
+            )
+
+        if self.verbose:
+            print(f"    Found {len(results)} relevant chunks")
+
+        # Step 2: Check abstention
+        should_abstain = False
+        abstain_reason = None
+
+        if self.abstention_checker and results:
+            contexts = [{"similarity": r.get("similarity", 0), "text": r.get("text", "")} for r in results]
+            should_abstain, abstain_reason = self.abstention_checker.should_abstain(question, contexts)
+
+            if should_abstain and self.verbose:
+                print(f"    [!] Low confidence: {abstain_reason}")
+
+        # Step 3: Check conflicts
+        conflict_result = None
+        if self.conflict_detector and results and not should_abstain:
+            chunks_for_conflict = [
+                {
+                    "text": r.get("text", ""),
+                    "metadata": r.get("metadata", {}),
+                    "similarity": r.get("similarity", 0)
+                }
+                for r in results
+            ]
+            conflict_result = self.conflict_detector.detect_and_resolve(chunks_for_conflict, question)
+
+            if conflict_result.has_conflicts and self.verbose:
+                print(f"    [!] Conflicts detected: {conflict_result.conflict_summary}")
+
+        # Step 4: Generate answer
+        if self.verbose:
+            print("[2/4] Generating answer...")
+
+        if should_abstain:
+            answer = f"Xin loi, toi khong the tra loi cau hoi nay vi {abstain_reason}"
+            verification_result = None
+        else:
+            # Use resolved context if conflicts detected
+            if conflict_result and conflict_result.resolved_context:
+                context = conflict_result.resolved_context
+            else:
+                context = "\n\n".join([r.get("text", "") for r in results])
+
+            # Get prompt
+            sys_prompt, user_prompt = self.prompt_manager.format_prompt(
+                template,
+                context=context,
+                question=question
+            )
+
+            # Generate
+            response = self.rag.query(question, top_k=top_k)
+            answer = response.get("answer", "")
+
+            # Step 5: Verify answer
+            verification_result = None
+            if self.verifier and not should_abstain:
+                if self.verbose:
+                    print("[3/4] Verifying answer...")
+                verification_result = self.verifier.verify(answer, context, question)
+
+                if self.verbose:
+                    print(f"    Grounding: {verification_result.grounding_level.value}")
+                    print(f"    Confidence: {verification_result.confidence_score:.2f}")
+
+        # Step 6: TTS (optional)
+        audio_bytes = None
+        if with_tts and self.tts and answer:
+            if self.verbose:
+                print("[4/4] Generating speech...")
+            try:
+                audio_bytes = self.tts.synthesize_sync(answer)
+            except Exception as e:
+                if self.verbose:
+                    print(f"    TTS error: {e}")
+
+        # Build response
+        response = {
+            "question": question,
+            "answer": answer,
+            "sources": results,
+            "should_abstain": should_abstain,
+            "abstain_reason": abstain_reason
+        }
+
+        if verification_result:
+            response["verification"] = {
+                "grounding_level": verification_result.grounding_level.value,
+                "confidence_score": verification_result.confidence_score,
+                "explanation": verification_result.explanation
+            }
+
+        if conflict_result and conflict_result.has_conflicts:
+            response["conflicts"] = {
+                "has_conflicts": True,
+                "summary": conflict_result.conflict_summary,
+                "resolution": conflict_result.resolution_note
+            }
+
+        if audio_bytes:
+            response["audio"] = audio_bytes
+
+        # Print response
+        if self.verbose:
             self._print_response(response)
 
         return response
 
     def _print_response(self, response: dict):
-        """In response mot cach dep mat"""
-        print("\n" + "=" * 80)
+        """Print response in a formatted way."""
+        print("\n" + "=" * 70)
         print("ANSWER:")
-        print("=" * 80)
+        print("=" * 70)
         print(response["answer"])
 
-        if "sources" in response and response["sources"]:
-            print("\n" + "=" * 80)
+        if response.get("should_abstain"):
+            print(f"\n[ABSTAINED] {response.get('abstain_reason')}")
+
+        if "verification" in response:
+            v = response["verification"]
+            print(f"\n[VERIFICATION] {v['grounding_level']} (confidence: {v['confidence_score']:.2f})")
+
+        if "conflicts" in response:
+            c = response["conflicts"]
+            print(f"\n[CONFLICTS] {c['summary']}")
+            print(f"Resolution: {c['resolution']}")
+
+        if response.get("sources"):
+            print("\n" + "-" * 70)
             print(f"SOURCES ({len(response['sources'])} chunks):")
-            print("=" * 80)
-
-            for i, source in enumerate(response["sources"], 1):
-                print(f"\n[Source {i}] Similarity: {source['similarity']:.4f}")
-
-                if "audio_file" in source and source["audio_file"]:
-                    print(f"Audio: {source['audio_file']}")
-
-                if "start_time_formatted" in source:
-                    print(f"Time: {source['start_time_formatted']} - {source.get('end_time_formatted', 'N/A')}")
-
-                text = source.get('text', '')
-                print(f"Text: {text[:200]}..." if len(text) > 200 else f"Text: {text}")
+            for i, src in enumerate(response["sources"][:3], 1):
+                sim = src.get("similarity", 0)
+                text = src.get("text", "")[:150]
+                source = src.get("metadata", {}).get("source", "unknown")
+                print(f"\n[{i}] {source} (sim: {sim:.3f})")
+                print(f"    {text}...")
 
     def get_stats(self) -> dict:
-        """Lay thong ke ve he thong"""
+        """Get system statistics."""
         db_stats = self.vector_db.get_collection_stats()
-        rag_stats = self.rag.get_retriever_stats()
 
         return {
             "database": db_stats,
-            "rag": rag_stats,
             "config": {
-                "whisper_model": self.whisper_model,
-                "embedding_model": self.embedding_model,
-                "llm_model": self.llm_model,
+                "embedding_provider": self.embedding_provider,
+                "embedding_model": self._get_embedding_model(),
+                "embedding_dim": self.embedder.embedding_dim,
+                "llm_provider": self.llm_provider,
                 "chunk_size": Config.CHUNK_SIZE,
-                "chunk_overlap": Config.CHUNK_OVERLAP
+                "top_k": Config.TOP_K
+            },
+            "features": {
+                "reranker": self.reranker is not None,
+                "anti_hallucination": self.verifier is not None,
+                "tts": self.tts is not None,
+                "supported_formats": len(self.processor.supported_extensions())
             }
         }
 
     def interactive_mode(self):
-        """Che do tuong tac voi nguoi dung"""
-        print("\n" + "=" * 80)
-        print("INTERACTIVE MODE - Nhap cau hoi de truy van")
-        print("Go 'exit' hoac 'quit' de thoat")
-        print("Go 'stats' de xem thong ke")
-        print("Go 'mmr' de bat/tat MMR mode")
-        print("=" * 80)
+        """Interactive query mode."""
+        print("\n" + "=" * 70)
+        print("INTERACTIVE MODE")
+        print("=" * 70)
+        print("Commands:")
+        print("  exit/quit  - Exit")
+        print("  stats      - Show statistics")
+        print("  tts on/off - Toggle TTS")
+        print("  hybrid on/off - Toggle hybrid search")
+        print("=" * 70)
 
-        use_mmr = False
+        use_tts = False
+        use_hybrid = True
 
         while True:
             try:
-                question = input("\nCau hoi cua ban: ").strip()
+                question = input("\nQuestion: ").strip()
 
                 if not question:
                     continue
 
                 if question.lower() in ["exit", "quit", "q"]:
-                    print("Tam biet!")
+                    print("Goodbye!")
                     break
 
                 if question.lower() == "stats":
                     stats = self.get_stats()
-                    print(json.dumps(stats, indent=2, ensure_ascii=False))
+                    print(json.dumps(stats, indent=2, ensure_ascii=False, default=str))
                     continue
 
-                if question.lower() == "mmr":
-                    use_mmr = not use_mmr
-                    print(f"MMR mode: {'ON' if use_mmr else 'OFF'}")
+                if question.lower() == "tts on":
+                    use_tts = True
+                    print("TTS: ON")
+                    continue
+                elif question.lower() == "tts off":
+                    use_tts = False
+                    print("TTS: OFF")
+                    continue
+
+                if question.lower() == "hybrid on":
+                    use_hybrid = True
+                    print("Hybrid search: ON")
+                    continue
+                elif question.lower() == "hybrid off":
+                    use_hybrid = False
+                    print("Hybrid search: OFF")
                     continue
 
                 # Query
-                self.query(question, use_mmr=use_mmr)
+                self.query(question, use_hybrid=use_hybrid, with_tts=use_tts)
 
             except KeyboardInterrupt:
-                print("\n\nTam biet!")
+                print("\n\nGoodbye!")
                 break
             except Exception as e:
-                print(f"Loi: {str(e)}")
+                print(f"Error: {e}")
 
 
 def main():
-    """Main function"""
+    """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="He thong Truy xuat Thong tin Da phuong thuc tu Am thanh (Qdrant + LangChain)"
+        description="Multimodal Information Retrieval System - CLI",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python main.py --mode process --input data/documents/
+  python main.py --mode process --input data/audio/lecture.mp3
+  python main.py --mode query --question "What is machine learning?"
+  python main.py --mode query --question "AI la gi?" --tts
+  python main.py --mode interactive
+  python main.py --mode stats
+        """
     )
 
     parser.add_argument(
         "--mode",
         type=str,
-        choices=["process", "query", "interactive"],
+        choices=["process", "query", "interactive", "stats"],
         default="interactive",
-        help="Che do hoat dong: process (xu ly audio), query (truy van), interactive (tuong tac)"
+        help="Operation mode"
     )
 
     parser.add_argument(
-        "--audio",
+        "--input",
         type=str,
-        help="Duong dan file audio hoac thu muc chua audio files"
+        help="Input file or directory path (for process mode)"
     )
 
     parser.add_argument(
         "--question",
         type=str,
-        help="Cau hoi de query"
+        help="Question to query (for query mode)"
     )
 
     parser.add_argument(
         "--top-k",
         type=int,
-        default=None,
-        help="So luong chunks retrieve"
+        default=5,
+        help="Number of chunks to retrieve"
     )
 
     parser.add_argument(
-        "--mmr",
+        "--tts",
         action="store_true",
-        help="Su dung MMR de tang diversity"
+        help="Enable TTS for answer"
+    )
+
+    parser.add_argument(
+        "--no-hybrid",
+        action="store_true",
+        help="Disable hybrid search"
+    )
+
+    parser.add_argument(
+        "--reranker",
+        action="store_true",
+        help="Enable cross-encoder reranking"
+    )
+
+    parser.add_argument(
+        "--no-anti-hallucination",
+        action="store_true",
+        help="Disable anti-hallucination checks"
+    )
+
+    parser.add_argument(
+        "--embedding",
+        type=str,
+        choices=["local", "google", "openai"],
+        help="Embedding provider"
+    )
+
+    parser.add_argument(
+        "--llm",
+        type=str,
+        choices=["ollama", "google", "openai"],
+        help="LLM provider"
+    )
+
+    parser.add_argument(
+        "--tags",
+        type=str,
+        nargs="+",
+        help="Tags for processed documents"
+    )
+
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Minimal output"
     )
 
     args = parser.parse_args()
 
     # Initialize pipeline
-    pipeline = AudioIRPipeline()
+    pipeline = MultimodalIRPipeline(
+        embedding_provider=args.embedding,
+        llm_provider=args.llm,
+        use_reranker=args.reranker,
+        use_anti_hallucination=not args.no_anti_hallucination,
+        verbose=not args.quiet
+    )
 
     # Execute based on mode
     if args.mode == "process":
-        if not args.audio:
-            print("Loi: Can chi dinh --audio de xu ly")
-            return
+        if not args.input:
+            print("Error: --input required for process mode")
+            return 1
 
-        audio_path = Path(args.audio)
+        input_path = Path(args.input)
 
-        if audio_path.is_file():
-            # Process single file
-            pipeline.process_audio(str(audio_path))
-        elif audio_path.is_dir():
-            # Process all audio files in directory
-            audio_files = list(audio_path.glob("*.mp3")) + \
-                         list(audio_path.glob("*.wav")) + \
-                         list(audio_path.glob("*.m4a")) + \
-                         list(audio_path.glob("*.flac"))
-
-            if not audio_files:
-                print(f"Khong tim thay file audio trong {audio_path}")
-                return
-
-            pipeline.process_audio_batch([str(f) for f in audio_files])
+        if input_path.is_file():
+            result = pipeline.process_file(str(input_path), tags=args.tags)
+            if "error" in result:
+                print(f"Error: {result['error']}")
+                return 1
+        elif input_path.is_dir():
+            results = pipeline.process_directory(str(input_path), tags=args.tags)
+            errors = [r for r in results if "error" in r]
+            if errors:
+                print(f"\n{len(errors)} files failed to process")
+                return 1
         else:
-            print(f"Khong tim thay: {audio_path}")
+            print(f"Error: Path not found: {input_path}")
+            return 1
 
     elif args.mode == "query":
         if not args.question:
-            print("Loi: Can chi dinh --question de query")
-            return
+            print("Error: --question required for query mode")
+            return 1
 
-        pipeline.query(args.question, top_k=args.top_k, use_mmr=args.mmr)
+        pipeline.query(
+            args.question,
+            top_k=args.top_k,
+            use_hybrid=not args.no_hybrid,
+            with_tts=args.tts
+        )
+
+    elif args.mode == "stats":
+        stats = pipeline.get_stats()
+        print(json.dumps(stats, indent=2, ensure_ascii=False, default=str))
 
     else:  # interactive
         pipeline.interactive_mode()
 
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

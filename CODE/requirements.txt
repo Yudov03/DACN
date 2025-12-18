@@ -1,22 +1,24 @@
 # Core Dependencies
-openai-whisper==20231117
+# ASR Engines (choose one or both)
+faster-whisper>=1.0.0  # Recommended: 4x faster, same accuracy
+openai-whisper>=20231117  # Fallback: original OpenAI Whisper
 torch>=2.0.0
-torchaudio>=2.0.0
+torchaudio>=2.0.0  # Optional: for advanced audio processing
 
 # Local Embedding Models (Sentence-BERT, E5)
-sentence-transformers>=2.2.0
+sentence-transformers>=5.0.0
 
-# LangChain (core framework)
-langchain>=0.2.0
-langchain-community>=0.2.0
-langchain-openai>=0.1.0
-langchain-google-genai>=2.0.0
-langchain-ollama>=0.2.0
-langchain-experimental>=0.0.50
-langchain-text-splitters>=0.2.0
+# LangChain (core framework) - Updated to v1.x
+langchain>=1.0.0
+langchain-core>=1.0.0
+langchain-community>=0.4.0
+langchain-openai>=1.0.0
+langchain-google-genai>=4.0.0
+langchain-ollama>=1.0.0
+langchain-text-splitters>=1.0.0
 
 # OpenAI (optional - for cloud embeddings)
-openai>=1.0.0
+openai>=2.0.0
 
 # Google GenAI (optional - for cloud embeddings)
 google-generativeai>=0.8.0
@@ -27,17 +29,37 @@ qdrant-client>=1.7.0
 # Text Processing (for chunking)
 nltk>=3.8.0
 
-# Audio Processing
+# Audio Processing (optional)
 pydub>=0.25.1
 librosa>=0.10.0
 
 # Utilities
-numpy>=1.24.0
+numpy>=1.24.0,<3.0.0
 pandas>=2.0.0
 tqdm>=4.65.0
 python-dotenv>=1.0.0
+requests>=2.32.5
 
-# API & Web (for later phases)
+# Document Processing
+PyMuPDF>=1.23.0
+pdfplumber>=0.10.0
+python-docx>=1.1.0
+python-pptx>=0.6.21
+openpyxl>=3.1.0
+
+# OCR - Enhanced with PaddleOCR
+paddleocr>=2.7.0
+paddlepaddle>=2.5.0  # CPU version; use paddlepaddle-gpu for GPU
+easyocr>=1.7.0  # Fallback OCR engine
+Pillow>=10.0.0
+opencv-python>=4.8.0  # For advanced preprocessing
+
+# UI
+streamlit>=1.28.0
+
+# TTS
+edge-tts>=6.1.0
+
+# API & Web (optional - for later phases)
 fastapi>=0.104.0
 uvicorn>=0.24.0
-requests>=2.31.0

@@ -88,14 +88,14 @@ class TextEmbedding:
         if model_name and model_name in MODEL_ALIASES:
             model_name = MODEL_ALIASES[model_name]
 
-        # Default models
+        # Default models (read from .env)
         if model_name is None:
             if self.provider == "local":
-                model_name = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+                model_name = os.getenv("LOCAL_EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-mpnet-base-v2")
             elif self.provider == "google":
-                model_name = "models/text-embedding-004"
+                model_name = os.getenv("GOOGLE_EMBEDDING_MODEL", "models/text-embedding-004")
             else:
-                model_name = "text-embedding-3-small"
+                model_name = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
 
         self.model_name = model_name
 
@@ -169,7 +169,9 @@ class TextEmbedding:
                 "Chay: pip install sentence-transformers"
             )
 
-        # Determine device
+        # Determine device (from .env or auto-detect)
+        if self.device is None:
+            self.device = os.getenv("LOCAL_EMBEDDING_DEVICE")
         if self.device is None:
             import torch
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -184,8 +186,11 @@ class TextEmbedding:
         if self.model_name in LOCAL_MODELS:
             self.embedding_dim = LOCAL_MODELS[self.model_name]
         else:
-            # Try to infer from model
-            self.embedding_dim = self.model.get_sentence_embedding_dimension()
+            # Try to infer from model, fallback to .env
+            try:
+                self.embedding_dim = self.model.get_sentence_embedding_dimension()
+            except:
+                self.embedding_dim = int(os.getenv("LOCAL_EMBEDDING_DIMENSION", 768))
 
         # Check if E5 model (requires special prefix)
         self.is_e5 = "e5" in self.model_name.lower()

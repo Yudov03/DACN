@@ -3,6 +3,12 @@ RAG Module - Retrieval-Augmented Generation
 Ho tro nhieu providers:
 - Local: Ollama (llama3.2, mistral, qwen2.5, ...)
 - Cloud: OpenAI, Google (LangChain)
+
+Enhanced features:
+- Anti-hallucination with answer verification
+- Conflict detection and resolution
+- Date-aware retrieval (prefer newer info)
+- Multiple prompt templates (strict, citation_required, conflict_aware)
 """
 
 from typing import List, Dict, Optional, Union
@@ -13,6 +19,15 @@ import os
 
 from langchain_core.prompts import PromptTemplate
 from langchain_core.documents import Document
+
+# Import new modules for enhanced RAG
+try:
+    from .answer_verification import AnswerVerifier, AbstentionChecker, verify_rag_answer
+    from .conflict_detection import ConflictDetector, detect_conflicts, ResolutionStrategy
+    from .prompt_templates import PromptTemplateManager
+    HAS_ENHANCED_FEATURES = True
+except ImportError:
+    HAS_ENHANCED_FEATURES = False
 
 
 # Supported Ollama models with descriptions
@@ -52,12 +67,20 @@ class RAGSystem:
         vector_db,
         embedder,
         llm_model: Optional[str] = None,
-        provider: str = "ollama",  # "ollama", "openai", or "google"
+        provider: str = None,  # "ollama", "openai", or "google" - reads from LLM_PROVIDER
         api_key: Optional[str] = None,
-        temperature: float = 0.7,
-        max_tokens: int = 500,
-        top_k: int = 5,
-        ollama_base_url: str = "http://localhost:11434"
+        temperature: float = None,  # Reads from LLM_TEMPERATURE
+        max_tokens: int = None,  # Reads from LLM_MAX_TOKENS
+        top_k: int = None,  # Reads from TOP_K
+        ollama_base_url: str = None,  # Reads from OLLAMA_BASE_URL
+        # Enhanced features
+        enable_verification: bool = True,
+        enable_conflict_detection: bool = True,
+        enable_date_boost: bool = True,
+        prompt_template_name: str = "strict_qa",  # strict_qa, citation_required, conflict_aware, safe_abstention
+        language: str = "vi",
+        min_confidence: float = 0.4,
+        date_boost_weight: float = 0.2
     ):
         """
         Khoi tao RAG System
@@ -72,23 +95,54 @@ class RAGSystem:
             max_tokens: Max tokens cho response
             top_k: So luong chunks retrieve
             ollama_base_url: URL cua Ollama server (default: http://localhost:11434)
+
+            # Enhanced RAG features (anti-hallucination)
+            enable_verification: Bat answer verification (default: True)
+            enable_conflict_detection: Bat conflict detection (default: True)
+            enable_date_boost: Uu tien thong tin moi hon (default: True)
+            prompt_template_name: Ten prompt template (strict_qa, citation_required, conflict_aware, safe_abstention)
+            language: Ngon ngu cho prompts (vi/en)
+            min_confidence: Nguong confidence toi thieu (default: 0.4)
+            date_boost_weight: Trong so cho date boost (default: 0.2)
         """
         self.vector_db = vector_db
         self.embedder = embedder
-        self.provider = provider.lower()
-        self.temperature = temperature
-        self.max_tokens = max_tokens
-        self.top_k = top_k
-        self.ollama_base_url = ollama_base_url
+        # Read from .env with defaults
+        self.provider = (provider or os.getenv("LLM_PROVIDER", "ollama")).lower()
+        self.temperature = temperature if temperature is not None else float(os.getenv("LLM_TEMPERATURE", "0.7"))
+        self.max_tokens = max_tokens if max_tokens is not None else int(os.getenv("LLM_MAX_TOKENS", "500"))
+        self.top_k = top_k if top_k is not None else int(os.getenv("TOP_K", "5"))
+        self.ollama_base_url = ollama_base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
-        # Default models
+        # Enhanced features settings
+        self.enable_verification = enable_verification and HAS_ENHANCED_FEATURES
+        self.enable_conflict_detection = enable_conflict_detection and HAS_ENHANCED_FEATURES
+        self.enable_date_boost = enable_date_boost
+        self.prompt_template_name = prompt_template_name
+        self.language = language
+        self.min_confidence = min_confidence
+        self.date_boost_weight = date_boost_weight
+
+        # Initialize enhanced components
+        if HAS_ENHANCED_FEATURES:
+            self.verifier = AnswerVerifier(min_confidence=min_confidence) if enable_verification else None
+            self.abstention_checker = AbstentionChecker() if enable_verification else None
+            self.conflict_detector = ConflictDetector() if enable_conflict_detection else None
+            self.prompt_manager = PromptTemplateManager(language=language)
+        else:
+            self.verifier = None
+            self.abstention_checker = None
+            self.conflict_detector = None
+            self.prompt_manager = None
+
+        # Default models (read from .env)
         if llm_model is None:
             if self.provider == "ollama":
-                llm_model = "llama3.2"
+                llm_model = os.getenv("OLLAMA_MODEL", "llama3.2")
             elif self.provider == "google":
-                llm_model = "gemini-2.0-flash"
+                llm_model = os.getenv("GOOGLE_LLM_MODEL", "gemini-2.0-flash")
             else:
-                llm_model = "gpt-4o-mini"
+                llm_model = os.getenv("OPENAI_LLM_MODEL", "gpt-4o-mini")
 
         self.llm_model = llm_model
 
@@ -244,10 +298,15 @@ Tra loi:"""
         top_k: Optional[int] = None,
         return_sources: bool = True,
         filter_dict: Optional[Dict] = None,
-        use_mmr: bool = False
+        use_mmr: bool = False,
+        # Enhanced options
+        verify_answer: Optional[bool] = None,
+        detect_conflicts: Optional[bool] = None,
+        use_date_boost: Optional[bool] = None,
+        prompt_template: Optional[str] = None
     ) -> Dict:
         """
-        Thuc hien query voi RAG pipeline
+        Thuc hien query voi RAG pipeline (Enhanced)
 
         Args:
             question: Cau hoi cua nguoi dung
@@ -256,10 +315,22 @@ Tra loi:"""
             filter_dict: Bo loc cho retrieval
             use_mmr: Su dung MMR de tang diversity
 
+            # Enhanced options (override defaults)
+            verify_answer: Bat/tat verification cho query nay
+            detect_conflicts: Bat/tat conflict detection cho query nay
+            use_date_boost: Bat/tat date boost cho query nay
+            prompt_template: Override prompt template (strict_qa, citation_required, conflict_aware, safe_abstention)
+
         Returns:
-            Dict chua answer, sources va metadata
+            Dict chua answer, sources, metadata, verification_result, conflicts
         """
         k = top_k or self.top_k
+
+        # Resolve feature flags (use query-level override or instance defaults)
+        do_verify = verify_answer if verify_answer is not None else self.enable_verification
+        do_conflict = detect_conflicts if detect_conflicts is not None else self.enable_conflict_detection
+        do_date_boost = use_date_boost if use_date_boost is not None else self.enable_date_boost
+        template_name = prompt_template or self.prompt_template_name
 
         # Step 1: Tao embedding cho query
         query_embedding = self.embedder.encode_query(question)
@@ -278,6 +349,21 @@ Tra loi:"""
                 filter_dict=filter_dict
             )
 
+        # Step 2.5: Check abstention (should we refuse to answer?)
+        if do_verify and self.abstention_checker and retrieved_chunks:
+            should_abstain, abstain_reason = self.abstention_checker.should_abstain(
+                question, retrieved_chunks
+            )
+            if should_abstain:
+                return {
+                    "answer": self.abstention_checker.get_abstention_response(abstain_reason, question),
+                    "sources": [],
+                    "question": question,
+                    "timestamp": datetime.now().isoformat(),
+                    "abstained": True,
+                    "abstain_reason": abstain_reason
+                }
+
         if not retrieved_chunks:
             return {
                 "answer": "Toi khong tim thay thong tin lien quan de tra loi cau hoi nay.",
@@ -286,24 +372,68 @@ Tra loi:"""
                 "timestamp": datetime.now().isoformat()
             }
 
-        # Step 3: Format context tu retrieved chunks
-        context = self._format_context(retrieved_chunks)
+        # Step 2.6: Apply date boost (prefer newer info)
+        if do_date_boost:
+            retrieved_chunks = self._apply_date_boost(retrieved_chunks)
 
-        # Step 4: Tao prompt
-        prompt = self.prompt_template.format(
-            context=context,
-            question=question
-        )
+        # Step 3: Detect and resolve conflicts
+        conflict_result = None
+        if do_conflict and self.conflict_detector:
+            conflict_result = self.conflict_detector.detect_and_resolve(
+                retrieved_chunks, question, ResolutionStrategy.PREFER_NEWER
+            )
+            if conflict_result.has_conflicts:
+                # Use resolved context
+                context = conflict_result.resolved_context
+            else:
+                context = self._format_context(retrieved_chunks)
+        else:
+            context = self._format_context(retrieved_chunks)
 
-        # Step 5: Goi LLM
+        # Step 4: Tao prompt (use enhanced template if available)
+        if self.prompt_manager and template_name:
+            system_prompt, user_prompt = self.prompt_manager.format_prompt(
+                template_name, context, question
+            )
+        else:
+            system_prompt = "Ban la tro ly AI tra loi cau hoi dua tren tai lieu."
+            user_prompt = self.prompt_template.format(
+                context=context,
+                question=question
+            )
+
+        # Step 5: Goi LLM (use proper message format for chat models)
         try:
-            response = self.llm.invoke(prompt)
+            from langchain_core.messages import HumanMessage, SystemMessage
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ]
+            response = self.llm.invoke(messages)
             answer = response.content.strip()
         except Exception as e:
             print(f"Loi khi goi LLM: {str(e)}")
             answer = f"Xin loi, da co loi xay ra khi xu ly cau hoi: {str(e)}"
 
-        # Step 6: Format response
+        # Step 6: Verify answer (anti-hallucination)
+        verification_result = None
+        if do_verify and self.verifier:
+            verification_result = self.verifier.verify(
+                answer, context, question,
+                sources=[{"similarity": c.get("similarity", 0)} for c in retrieved_chunks]
+            )
+
+            # If should abstain based on verification, modify answer
+            if verification_result.should_abstain:
+                answer = (
+                    f"[Luu y: Do tin cay thap ({verification_result.confidence_score:.0%})]\n\n"
+                    f"{answer}\n\n"
+                    f"---\n"
+                    f"Canh bao: Cau tra loi co the khong chinh xac do thong tin trong tai lieu khong du ro rang. "
+                    f"Vui long kiem tra lai nguon goc."
+                )
+
+        # Step 7: Format response
         response_data = {
             "answer": answer,
             "question": question,
@@ -316,7 +446,68 @@ Tra loi:"""
         if return_sources:
             response_data["sources"] = self._format_sources(retrieved_chunks)
 
+        # Add verification info
+        if verification_result:
+            response_data["verification"] = {
+                "confidence": verification_result.confidence_score,
+                "grounding_level": verification_result.grounding_level.value,
+                "warnings": verification_result.warnings,
+                "suggested_action": verification_result.suggested_action
+            }
+
+        # Add conflict info
+        if conflict_result and conflict_result.has_conflicts:
+            response_data["conflicts"] = {
+                "detected": True,
+                "count": len(conflict_result.conflicts),
+                "resolution_notes": conflict_result.resolution_notes,
+                "warnings": conflict_result.warnings
+            }
+
         return response_data
+
+    def _apply_date_boost(self, chunks: List[Dict]) -> List[Dict]:
+        """Apply date boost to prefer newer information"""
+        if not chunks:
+            return chunks
+
+        # Extract and score by date
+        scored_chunks = []
+        for chunk in chunks:
+            text = chunk.get("text", chunk.get("content", ""))
+            metadata = chunk.get("metadata", {})
+
+            # Original similarity score
+            original_score = chunk.get("similarity", chunk.get("score", 0.5))
+
+            # Date score (newer = higher)
+            date_score = 0.5  # Default neutral
+            if self.conflict_detector:
+                date = self.conflict_detector._extract_date(text, metadata)
+                if date:
+                    days_ago = (datetime.now() - date).days
+                    date_score = max(0, 1 - days_ago / 1825)  # 5 year scale
+
+            # Check for "new/updated" keywords
+            text_lower = text.lower()
+            if any(kw in text_lower for kw in ['mới', 'cập nhật', 'hiện hành', 'new', 'updated', 'current']):
+                date_score += 0.2
+            if any(kw in text_lower for kw in ['cũ', 'trước đây', 'old', 'previous', 'deprecated']):
+                date_score -= 0.2
+
+            date_score = max(0, min(1, date_score))
+
+            # Combined score
+            final_score = (original_score * (1 - self.date_boost_weight) +
+                          date_score * self.date_boost_weight)
+
+            chunk["_date_boosted_score"] = final_score
+            chunk["_date_score"] = date_score
+            scored_chunks.append(chunk)
+
+        # Sort by boosted score
+        scored_chunks.sort(key=lambda x: x.get("_date_boosted_score", 0), reverse=True)
+        return scored_chunks
 
     def _format_context(self, chunks: List[Dict]) -> str:
         """Format cac chunks thanh context cho LLM"""

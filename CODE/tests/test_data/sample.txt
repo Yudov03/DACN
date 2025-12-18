@@ -1,0 +1,27 @@
+Sample Document for Testing
+===========================
+
+This is a sample document used for testing the Document Processing Pipeline.
+
+Section 1: Introduction
+-----------------------
+The Audio Information Retrieval System is designed to process and search through audio content efficiently.
+
+Section 2: Features
+-------------------
+- Automatic Speech Recognition (ASR)
+- Text Chunking and Embedding
+- Vector Database Storage
+- Semantic Search with RAG
+
+Section 3: Vietnamese Content
+-----------------------------
+Đây là nội dung tiếng Việt để kiểm tra khả năng xử lý đa ngôn ngữ.
+Hệ thống hỗ trợ tiếng Việt với các tính năng:
+- Nhận dạng giọng nói tiếng Việt
+- Tìm kiếm ngữ nghĩa
+- Text-to-Speech với giọng Việt
+
+Section 4: Conclusion
+---------------------
+This document serves as a test case for the document processing module.

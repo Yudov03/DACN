@@ -27,13 +27,13 @@ class TextChunker:
 
     def __init__(
         self,
-        chunk_size: int = 500,
-        chunk_overlap: int = 50,
-        method: str = "semantic",
-        semantic_threshold: float = 0.65,
-        semantic_window_size: int = 5,
+        chunk_size: int = None,  # Reads from CHUNK_SIZE
+        chunk_overlap: int = None,  # Reads from CHUNK_OVERLAP
+        method: str = None,  # Reads from CHUNKING_METHOD
+        semantic_threshold: float = None,  # Reads from SEMANTIC_THRESHOLD
+        semantic_window_size: int = None,  # Reads from SEMANTIC_WINDOW_SIZE
         api_key: Optional[str] = None,
-        embedding_provider: str = "google"  # "openai" or "google"
+        embedding_provider: str = "local"  # "local", "google", or "openai"
     ):
         """
         Khoi tao Text Chunker
@@ -44,14 +44,15 @@ class TextChunker:
             method: Phuong phap chunking (fixed, semantic, sentence, recursive)
             semantic_threshold: Nguong cosine similarity cho semantic chunking
             semantic_window_size: Window size cho semantic chunking
-            api_key: API key (cho semantic chunking)
-            embedding_provider: "openai" hoac "google" cho semantic chunking
+            api_key: API key (cho semantic chunking voi cloud providers)
+            embedding_provider: "local" (SBERT/E5), "google", hoac "openai"
         """
-        self.chunk_size = chunk_size
-        self.chunk_overlap = chunk_overlap
-        self.method = method
-        self.semantic_threshold = semantic_threshold
-        self.semantic_window_size = semantic_window_size
+        # Read from .env with defaults
+        self.chunk_size = chunk_size if chunk_size is not None else int(os.getenv("CHUNK_SIZE", "500"))
+        self.chunk_overlap = chunk_overlap if chunk_overlap is not None else int(os.getenv("CHUNK_OVERLAP", "50"))
+        self.method = method or os.getenv("CHUNKING_METHOD", "semantic")
+        self.semantic_threshold = semantic_threshold if semantic_threshold is not None else float(os.getenv("SEMANTIC_THRESHOLD", "0.65"))
+        self.semantic_window_size = semantic_window_size if semantic_window_size is not None else int(os.getenv("SEMANTIC_WINDOW_SIZE", "5"))
         self.embedding_provider = embedding_provider.lower()
 
         # Get API key based on provider
@@ -83,8 +84,12 @@ class TextChunker:
         self._semantic_chunker = None
 
     def _get_semantic_chunker(self):
-        """Lazy load SemanticChunker - ho tro ca OpenAI va Google"""
+        """Lazy load SemanticChunker - ho tro Local, OpenAI va Google"""
         if self._semantic_chunker is None:
+            if self.embedding_provider == "local":
+                # Use local embeddings - return None, will use _local_semantic_chunking
+                return None
+
             if not self.api_key:
                 key_name = "GOOGLE_API_KEY" if self.embedding_provider == "google" else "OPENAI_API_KEY"
                 raise ValueError(f"{key_name} can thiet cho semantic chunking!")
@@ -109,6 +114,13 @@ class TextChunker:
                 breakpoint_threshold_amount=95
             )
         return self._semantic_chunker
+
+    def _get_local_embedder(self):
+        """Lazy load local TextEmbedding for semantic chunking"""
+        if not hasattr(self, '_local_embedder') or self._local_embedder is None:
+            from src.modules import TextEmbedding
+            self._local_embedder = TextEmbedding(provider="local")
+        return self._local_embedder
 
     def chunk_text(self, text: str, metadata: Optional[Dict] = None) -> List[Dict]:
         """
@@ -207,7 +219,7 @@ class TextChunker:
 
     def _semantic_chunking(self, text: str) -> List[str]:
         """
-        Chunking dua tren ngu nghia su dung LangChain SemanticChunker
+        Chunking dua tren ngu nghia su dung local embeddings hoac LangChain SemanticChunker
 
         Args:
             text: Van ban can chunk
@@ -216,6 +228,11 @@ class TextChunker:
             List cac chunks
         """
         try:
+            # Use local semantic chunking for local provider
+            if self.embedding_provider == "local":
+                return self._local_semantic_chunking(text)
+
+            # Use LangChain SemanticChunker for cloud providers
             semantic_chunker = self._get_semantic_chunker()
             docs = semantic_chunker.create_documents([text])
             chunks = [doc.page_content for doc in docs if doc.page_content.strip()]
@@ -228,6 +245,94 @@ class TextChunker:
             print(f"Loi semantic chunking: {e}")
             print("Fallback sang recursive chunking...")
             return self._recursive_chunking(text)
+
+    def _local_semantic_chunking(self, text: str) -> List[str]:
+        """
+        Semantic chunking su dung local embeddings (SBERT/E5)
+
+        Algorithm:
+        1. Split text into sentences
+        2. Compute embeddings for each sentence
+        3. Calculate cosine similarity between consecutive sentences
+        4. Split when similarity drops below threshold
+
+        Args:
+            text: Van ban can chunk
+
+        Returns:
+            List cac chunks
+        """
+        # Split into sentences
+        sentences = self._split_into_sentences(text)
+        if len(sentences) <= 1:
+            return [text] if text.strip() else []
+
+        # Get embeddings for all sentences
+        embedder = self._get_local_embedder()
+        embeddings = embedder.encode_text(sentences, show_progress=False)
+
+        # Calculate similarities between consecutive sentences
+        similarities = []
+        for i in range(len(embeddings) - 1):
+            sim = self._cosine_similarity(embeddings[i], embeddings[i + 1])
+            similarities.append(sim)
+
+        # Find breakpoints where similarity drops significantly
+        breakpoints = [0]  # Start of first chunk
+
+        # Use percentile-based threshold (like LangChain)
+        if similarities:
+            threshold = np.percentile(similarities, 100 - 95)  # Bottom 5% similarities
+            for i, sim in enumerate(similarities):
+                if sim < threshold:
+                    breakpoints.append(i + 1)
+
+        breakpoints.append(len(sentences))  # End of last chunk
+
+        # Create chunks from breakpoints
+        chunks = []
+        for i in range(len(breakpoints) - 1):
+            start = breakpoints[i]
+            end = breakpoints[i + 1]
+            chunk_text = " ".join(sentences[start:end])
+            if chunk_text.strip():
+                chunks.append(chunk_text)
+
+        # Merge short chunks and split long chunks
+        merged_chunks = self._merge_short_chunks(chunks, min_length=100)
+        final_chunks = self._split_long_chunks(merged_chunks, max_length=self.chunk_size)
+
+        return final_chunks
+
+    def _split_into_sentences(self, text: str) -> List[str]:
+        """Split text into sentences using regex"""
+        # Pattern for sentence endings (Vietnamese and English)
+        pattern = r'(?<=[.!?])\s+'
+        sentences = re.split(pattern, text)
+        return [s.strip() for s in sentences if s.strip()]
+
+    def _cosine_similarity(self, vec1, vec2) -> float:
+        """Calculate cosine similarity between two vectors"""
+        vec1 = np.array(vec1)
+        vec2 = np.array(vec2)
+        dot_product = np.dot(vec1, vec2)
+        norm1 = np.linalg.norm(vec1)
+        norm2 = np.linalg.norm(vec2)
+        if norm1 == 0 or norm2 == 0:
+            return 0.0
+        return dot_product / (norm1 * norm2)
+
+    def _split_long_chunks(self, chunks: List[str], max_length: int) -> List[str]:
+        """Split chunks that exceed max_length"""
+        result = []
+        for chunk in chunks:
+            if len(chunk) <= max_length:
+                result.append(chunk)
+            else:
+                # Use recursive splitter for long chunks
+                sub_chunks = self._recursive_chunking(chunk)
+                result.extend(sub_chunks)
+        return result
 
     def _merge_short_chunks(self, chunks: List[str], min_length: int = 100) -> List[str]:
         """

@@ -1,348 +1,442 @@
 """
-Streamlit Web UI cho Audio Information Retrieval System
+Student Portal - Hệ thống tra cứu thông tin
+===========================================
+
+Giao diện dành cho SINH VIÊN tra cứu thông tin từ Knowledge Base.
+Chỉ có chức năng tìm kiếm và hỏi đáp, KHÔNG có upload/quản lý.
+
+Run with: streamlit run app.py
 """
 
 import streamlit as st
 import sys
 import os
-from pathlib import Path
-import tempfile
+import subprocess
 import time
+import requests
+import warnings
+import logging
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Suppress PyTorch internal warnings
+warnings.filterwarnings("ignore", message=".*torch.classes.*")
+warnings.filterwarnings("ignore", message=".*Examining the path.*")
+logging.getLogger("torch").setLevel(logging.ERROR)
+logging.getLogger("streamlit").setLevel(logging.ERROR)
+
+# Load environment variables
+load_dotenv()
+
+# Note: Don't use Windows encoding wrapper here - Streamlit manages its own output streams
+# Using TextIOWrapper causes "I/O operation on closed file" errors on hot-reload
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent))
 
-from config import Config
+# Get config from .env
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama")
+EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "local")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+LOCAL_EMBEDDING_DIMENSION = int(os.getenv("LOCAL_EMBEDDING_DIMENSION", 768))
 
-# Page config
+
+# =============================================================================
+# Auto-start Ollama
+# =============================================================================
+
+def is_ollama_running():
+    """Check if Ollama server is running"""
+    try:
+        response = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=2)
+        return response.status_code == 200
+    except:
+        return False
+
+
+def start_ollama():
+    """Start Ollama server in background"""
+    if is_ollama_running():
+        return True
+
+    try:
+        # Start Ollama in background (Windows)
+        if sys.platform == "win32":
+            subprocess.Popen(
+                ["ollama", "serve"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+        else:
+            subprocess.Popen(
+                ["ollama", "serve"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+
+        # Wait for server to start (max 10 seconds)
+        for _ in range(20):
+            time.sleep(0.5)
+            if is_ollama_running():
+                return True
+        return False
+    except FileNotFoundError:
+        return False  # Ollama not installed
+    except Exception:
+        return False
+
+
+# Auto-start Ollama when app loads (only if using Ollama provider)
+if LLM_PROVIDER == "ollama" and "ollama_started" not in st.session_state:
+    st.session_state.ollama_started = start_ollama()
+    if not st.session_state.ollama_started:
+        print(f"Warning: Could not start Ollama. Make sure it's installed.")
+
+# =============================================================================
+# Page Config
+# =============================================================================
+
 st.set_page_config(
-    page_title="Audio IR System",
-    page_icon="🎵",
+    page_title="Tra cứu thông tin",
+    page_icon="🎓",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
+# =============================================================================
 # Custom CSS
+# =============================================================================
+
 st.markdown("""
 <style>
+    /* Main header */
     .main-header {
-        font-size: 2.5rem;
-        font-weight: bold;
-        color: #1E88E5;
         text-align: center;
+        padding: 1rem;
+        background: linear-gradient(135deg, #1E88E5, #1565C0);
+        color: white;
+        border-radius: 10px;
         margin-bottom: 1rem;
     }
-    .sub-header {
-        font-size: 1.2rem;
-        color: #666;
-        text-align: center;
-        margin-bottom: 2rem;
+    .main-header h1 {
+        margin: 0;
+        font-size: 1.8rem;
     }
+    .main-header p {
+        margin: 0.5rem 0 0 0;
+        opacity: 0.9;
+    }
+
+    /* Chat styling */
+    .stChatMessage {
+        padding: 0.5rem;
+    }
+
+    /* Source citation */
     .source-box {
-        background-color: #f0f2f6;
-        padding: 1rem;
+        background-color: #E3F2FD;
+        padding: 0.75rem;
         border-radius: 0.5rem;
-        margin: 0.5rem 0;
+        margin-top: 0.5rem;
         border-left: 4px solid #1E88E5;
+        font-size: 0.85rem;
     }
-    .timestamp-badge {
-        background-color: #1E88E5;
-        color: white;
-        padding: 0.2rem 0.5rem;
-        border-radius: 0.3rem;
-        font-size: 0.8rem;
-    }
-    .metric-card {
+
+    /* Stats bar */
+    .stats-bar {
         background-color: #f8f9fa;
-        padding: 1rem;
+        padding: 0.5rem 1rem;
         border-radius: 0.5rem;
-        text-align: center;
+        margin-bottom: 1rem;
+        display: flex;
+        justify-content: center;
+        gap: 2rem;
     }
+
+    /* Hide unnecessary elements */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    .stDeployButton {display: none;}
 </style>
 """, unsafe_allow_html=True)
 
+# =============================================================================
+# Session State
+# =============================================================================
 
-def init_session_state():
-    """Initialize session state variables"""
-    if 'pipeline' not in st.session_state:
-        st.session_state.pipeline = None
-    if 'processed_files' not in st.session_state:
-        st.session_state.processed_files = []
-    if 'chat_history' not in st.session_state:
-        st.session_state.chat_history = []
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+if "kb" not in st.session_state:
+    st.session_state.kb = None
+
+if "embedder" not in st.session_state:
+    st.session_state.embedder = None
+
+if "vector_db" not in st.session_state:
+    st.session_state.vector_db = None
+
+if "tts" not in st.session_state:
+    st.session_state.tts = None
 
 
-def load_pipeline(embedding_provider, embedding_model, llm_provider, llm_model):
-    """Load or reload the pipeline with specified settings"""
+# =============================================================================
+# Initialize Components
+# =============================================================================
+
+@st.cache_resource
+def init_embedder():
+    """Initialize embedding model (cached)"""
     try:
-        from main import AudioIRPipeline
-
-        with st.spinner("Dang khoi tao he thong..."):
-            pipeline = AudioIRPipeline(
-                embedding_provider=embedding_provider,
-                llm_provider=llm_provider
-            )
-        return pipeline
+        from src.modules import TextEmbedding
+        return TextEmbedding(provider=EMBEDDING_PROVIDER)  # From .env
     except Exception as e:
-        st.error(f"Loi khoi tao: {str(e)}")
+        st.error(f"Lỗi khởi tạo Embedding: {e}")
         return None
 
 
-def process_audio_file(pipeline, audio_file):
-    """Process uploaded audio file"""
-    # Save uploaded file temporarily
-    with tempfile.NamedTemporaryFile(delete=False, suffix=Path(audio_file.name).suffix) as tmp:
-        tmp.write(audio_file.getbuffer())
-        tmp_path = tmp.name
+@st.cache_resource
+def init_vector_db():
+    """Initialize vector database (cached)"""
+    try:
+        from src.modules import VectorDatabase
+        return VectorDatabase(
+            collection_name="knowledge_base",
+            embedding_dimension=LOCAL_EMBEDDING_DIMENSION  # From .env
+        )
+    except Exception as e:
+        st.error(f"Lỗi kết nối Qdrant: {e}")
+        return None
+
+
+def get_kb_stats():
+    """Get knowledge base statistics"""
+    try:
+        from src.modules import KnowledgeBase
+        kb_dir = Path(__file__).parent / "data" / "knowledge_base"
+        kb = KnowledgeBase(base_dir=str(kb_dir))
+        return kb.get_stats()
+    except:
+        return None
+
+
+@st.cache_resource
+def init_rag():
+    """Initialize RAG system (cached)"""
+    try:
+        from src.modules import RAGSystem
+        embedder = init_embedder()
+        vector_db = init_vector_db()
+
+        if embedder and vector_db:
+            rag = RAGSystem(
+                vector_db=vector_db,
+                embedder=embedder,
+                provider=LLM_PROVIDER,
+                enable_verification=True,
+                prompt_template_name="strict_qa"
+            )
+            return rag
+    except Exception as e:
+        print(f"Lỗi khởi tạo RAG: {e}")
+    return None
+
+
+def init_tts():
+    """Initialize TTS"""
+    if st.session_state.tts is None:
+        try:
+            from src.modules import TextToSpeech
+            st.session_state.tts = TextToSpeech(voice="vi-female")
+        except:
+            pass
+    return st.session_state.tts
+
+
+# =============================================================================
+# Search Function
+# =============================================================================
+
+def semantic_search(query: str, top_k: int = 5):
+    """Perform semantic search"""
+    embedder = init_embedder()
+    vector_db = init_vector_db()
+
+    if not embedder or not vector_db:
+        return []
 
     try:
-        with st.spinner(f"Dang xu ly: {audio_file.name}..."):
-            result = pipeline.process_audio(tmp_path)
-        return result
-    finally:
-        # Cleanup temp file
-        os.unlink(tmp_path)
-
-
-def display_sources(sources):
-    """Display source chunks with timestamps"""
-    if not sources:
-        return
-
-    st.markdown("**Nguon tham khao:**")
-    for i, source in enumerate(sources, 1):
-        with st.expander(f"Nguon {i} - Similarity: {source.get('similarity', 0):.2%}"):
-            # Timestamp info
-            start = source.get('start_time_formatted', 'N/A')
-            end = source.get('end_time_formatted', 'N/A')
-            audio_file = source.get('audio_file', 'N/A')
-
-            col1, col2, col3 = st.columns(3)
-            col1.metric("File", audio_file)
-            col2.metric("Bat dau", start)
-            col3.metric("Ket thuc", end)
-
-            # Text content
-            st.markdown("**Noi dung:**")
-            st.info(source.get('text', ''))
-
-
-def sidebar_settings():
-    """Render sidebar settings"""
-    st.sidebar.markdown("## Cau hinh")
-
-    # Embedding settings
-    st.sidebar.markdown("### Embedding")
-    embedding_provider = st.sidebar.selectbox(
-        "Provider",
-        ["local", "google", "openai"],
-        index=0,
-        help="local: Sentence-BERT/E5 (mien phi), google/openai: Cloud API"
-    )
-
-    if embedding_provider == "local":
-        embedding_model = st.sidebar.selectbox(
-            "Model",
-            ["sbert", "e5", "e5-large", "vi-sbert"],
-            index=0
+        query_emb = embedder.encode_query(query)
+        results = vector_db.hybrid_search(
+            query=query,
+            query_embedding=query_emb,
+            alpha=0.7,
+            top_k=top_k
         )
-    else:
-        embedding_model = None
+        return results
+    except Exception as e:
+        st.error(f"Lỗi tìm kiếm: {e}")
+        return []
 
-    # LLM settings
-    st.sidebar.markdown("### LLM")
-    llm_provider = st.sidebar.selectbox(
-        "Provider",
-        ["ollama", "google", "openai"],
-        index=0,
-        help="ollama: Local (mien phi), google/openai: Cloud API"
-    )
 
-    if llm_provider == "ollama":
-        llm_model = st.sidebar.selectbox(
-            "Model",
-            ["llama3.2", "llama3.2:1b", "qwen2.5", "qwen2.5:3b", "mistral", "gemma2:2b", "phi3"],
-            index=0
-        )
+def get_answer(query: str, contexts: list) -> str:
+    """Generate answer from contexts using LLM"""
+    if not contexts:
+        return "Không tìm thấy thông tin liên quan trong cơ sở dữ liệu."
 
-        # Check Ollama status
-        from modules.rag_module import check_ollama_status
-        status = check_ollama_status()
-        if status['server_running']:
-            st.sidebar.success(f"Ollama: Running")
-            if status['available_models']:
-                st.sidebar.info(f"Models: {', '.join(status['available_models'][:3])}")
-        else:
-            st.sidebar.error("Ollama: Not running")
-            st.sidebar.caption("Chay: `ollama serve`")
-    else:
-        llm_model = None
+    # Try to use cached RAG system
+    try:
+        rag = init_rag()
+        if rag:
+            result = rag.query(query)
+            if result.get("answer"):
+                return result["answer"]
+    except Exception as e:
+        # LLM not available, fallback to showing contexts
+        st.warning(f"LLM Error: {e}")
+        import traceback
+        print(f"RAG Error: {traceback.format_exc()}")
 
-    # Retrieval settings
-    st.sidebar.markdown("### Retrieval")
-    top_k = st.sidebar.slider("So luong chunks (top_k)", 1, 10, 5)
+    # Fallback: Return relevant contexts
+    context_text = "\n\n".join([
+        f"**[{i+1}]** {ctx.get('text', '')[:300]}..."
+        for i, ctx in enumerate(contexts[:3])
+    ])
 
-    return {
-        'embedding_provider': embedding_provider,
-        'embedding_model': embedding_model,
-        'llm_provider': llm_provider,
-        'llm_model': llm_model,
-        'top_k': top_k
-    }
+    return f"""**Thông tin tìm thấy:**
 
+{context_text}
+
+---
+*Lưu ý: Để có câu trả lời tổng hợp, hệ thống cần kết nối với LLM (Ollama/Google/OpenAI).*
+"""
+
+
+# =============================================================================
+# Main UI
+# =============================================================================
 
 def main():
-    """Main application"""
-    init_session_state()
-
     # Header
-    st.markdown('<p class="main-header">🎵 Audio Information Retrieval</p>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-header">Tim kiem va hoi dap thong minh tren noi dung audio</p>', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="main-header">
+        <h1>🎓 Hệ thống Tra cứu Thông tin</h1>
+        <p>Đặt câu hỏi về quy định, học vụ, và các thông tin của nhà trường</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # Sidebar settings
-    settings = sidebar_settings()
+    # Stats bar
+    stats = get_kb_stats()
+    if stats and stats.total_documents > 0:
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("📄 Tài liệu", stats.total_documents)
+        with col2:
+            st.metric("📦 Đoạn văn bản", stats.total_chunks)
+        with col3:
+            st.metric("💾 Dung lượng", f"{stats.total_size_mb:.1f} MB")
+    else:
+        st.warning("⚠️ Chưa có dữ liệu trong hệ thống. Vui lòng liên hệ quản trị viên.")
+        return
 
-    # Initialize/Reload pipeline button
-    st.sidebar.markdown("---")
-    if st.sidebar.button("Khoi tao/Reload He thong", type="primary"):
-        st.session_state.pipeline = load_pipeline(
-            settings['embedding_provider'],
-            settings['embedding_model'],
-            settings['llm_provider'],
-            settings['llm_model']
-        )
-        if st.session_state.pipeline:
-            st.sidebar.success("Da khoi tao thanh cong!")
+    st.divider()
 
-    # Main content tabs
-    tab1, tab2, tab3 = st.tabs(["📤 Upload & Xu ly", "💬 Hoi dap", "📊 Thong ke"])
-
-    # Tab 1: Upload and Process
-    with tab1:
-        st.markdown("### Upload file audio")
-
-        uploaded_files = st.file_uploader(
-            "Chon file audio (mp3, wav, m4a, flac)",
-            type=['mp3', 'wav', 'm4a', 'flac'],
-            accept_multiple_files=True
-        )
-
-        if uploaded_files:
-            st.markdown(f"**{len(uploaded_files)} file da chon:**")
-            for f in uploaded_files:
-                st.write(f"- {f.name} ({f.size / 1024:.1f} KB)")
-
-            if st.button("Xu ly tat ca", type="primary"):
-                if st.session_state.pipeline is None:
-                    st.warning("Vui long khoi tao he thong truoc!")
-                else:
-                    progress_bar = st.progress(0)
-                    for i, audio_file in enumerate(uploaded_files):
-                        result = process_audio_file(st.session_state.pipeline, audio_file)
-                        if result:
-                            st.session_state.processed_files.append(audio_file.name)
-                            st.success(f"Da xu ly: {audio_file.name}")
-                        progress_bar.progress((i + 1) / len(uploaded_files))
-
-                    st.balloons()
-
-        # Show processed files
-        if st.session_state.processed_files:
-            st.markdown("### File da xu ly")
-            for f in st.session_state.processed_files:
-                st.write(f"✅ {f}")
-
-    # Tab 2: Q&A
-    with tab2:
-        st.markdown("### Hoi dap ve noi dung audio")
-
-        if st.session_state.pipeline is None:
-            st.warning("Vui long khoi tao he thong o sidebar truoc!")
+    # Chat interface
+    # Display chat history
+    for i, msg in enumerate(st.session_state.messages):
+        if msg["role"] == "user":
+            with st.chat_message("user", avatar="👤"):
+                st.markdown(msg["content"])
         else:
-            # Question input
-            question = st.text_input(
-                "Nhap cau hoi:",
-                placeholder="Noi dung chinh cua audio la gi?"
-            )
+            with st.chat_message("assistant", avatar="🎓"):
+                st.markdown(msg["content"])
 
-            col1, col2 = st.columns([1, 4])
-            with col1:
-                search_btn = st.button("Tim kiem", type="primary")
+                # Show sources
+                if msg.get("sources"):
+                    with st.expander("📚 Nguồn tham khảo", expanded=False):
+                        for src in msg["sources"]:
+                            similarity = src.get("similarity", 0)
+                            text_preview = src.get("text", "")[:150]
+                            st.markdown(f"- **[{similarity:.0%}]** {text_preview}...")
 
-            if search_btn and question:
-                with st.spinner("Dang tim kiem va tao cau tra loi..."):
-                    start_time = time.time()
-                    response = st.session_state.pipeline.query(
-                        question,
-                        top_k=settings['top_k']
-                    )
-                    elapsed = time.time() - start_time
+                # TTS - simple: click button -> show audio directly
+                if st.button("🔊 Nghe", key=f"tts_{i}"):
+                    tts = init_tts()
+                    if tts:
+                        with st.spinner("Đang tạo audio..."):
+                            try:
+                                audio = tts.synthesize_sync(msg["content"][:500])
+                                if audio:
+                                    st.audio(audio, format="audio/mp3")
+                            except Exception as e:
+                                st.error(f"Lỗi TTS: {e}")
 
-                # Display answer
-                st.markdown("### Tra loi")
-                st.success(response.get('answer', 'Khong tim thay cau tra loi'))
+    # Input
+    if prompt := st.chat_input("Nhập câu hỏi của bạn (VD: Quy định đăng ký môn học?)"):
+        # Add user message
+        st.session_state.messages.append({
+            "role": "user",
+            "content": prompt
+        })
 
-                # Metrics
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Thoi gian", f"{elapsed:.2f}s")
-                col2.metric("So nguon", response.get('num_sources', 0))
-                col3.metric("Model", response.get('model', 'N/A'))
+        with st.chat_message("user", avatar="👤"):
+            st.markdown(prompt)
 
-                # Sources
-                display_sources(response.get('sources', []))
+        # Search and get answer
+        with st.chat_message("assistant", avatar="🎓"):
+            with st.spinner("Đang tìm kiếm..."):
+                # Search
+                results = semantic_search(prompt, top_k=5)
 
-                # Add to chat history
-                st.session_state.chat_history.append({
-                    'question': question,
-                    'answer': response.get('answer', ''),
-                    'time': elapsed
-                })
+                # Get answer
+                answer = get_answer(prompt, results)
 
-            # Chat history
-            if st.session_state.chat_history:
-                st.markdown("---")
-                st.markdown("### Lich su hoi dap")
-                for i, chat in enumerate(reversed(st.session_state.chat_history[-5:])):
-                    with st.expander(f"Q: {chat['question'][:50]}..."):
-                        st.markdown(f"**Cau hoi:** {chat['question']}")
-                        st.markdown(f"**Tra loi:** {chat['answer']}")
-                        st.caption(f"Thoi gian: {chat['time']:.2f}s")
+                st.markdown(answer)
 
-    # Tab 3: Statistics
-    with tab3:
-        st.markdown("### Thong ke he thong")
+                # Show sources
+                if results:
+                    with st.expander("📚 Nguồn tham khảo", expanded=False):
+                        for src in results[:3]:
+                            similarity = src.get("similarity", 0)
+                            text_preview = src.get("text", "")[:150]
+                            st.markdown(f"- **[{similarity:.0%}]** {text_preview}...")
 
-        if st.session_state.pipeline:
-            try:
-                stats = st.session_state.pipeline.get_stats()
+        # Save to history
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": answer,
+            "sources": results[:3] if results else []
+        })
 
-                col1, col2, col3, col4 = st.columns(4)
-                col1.metric("Tong chunks", stats.get('total_chunks', 0))
-                col2.metric("Tong audio files", stats.get('total_audio_files', 0))
-                col3.metric("Embedding model", stats.get('embedding_model', 'N/A')[:20])
-                col4.metric("LLM model", stats.get('llm_model', 'N/A')[:20])
+    # Sidebar - Example questions
+    with st.sidebar:
+        st.markdown("### 💡 Câu hỏi mẫu")
 
-                # Vector DB stats
-                st.markdown("### Vector Database")
-                db_stats = stats.get('vector_db_stats', {})
-                st.json(db_stats)
+        example_questions = [
+            "Quy định đăng ký môn học?",
+            "Điều kiện được thi cuối kỳ?",
+            "Cách tính điểm trung bình?",
+            "Quy định về tín chỉ tự chọn?",
+            "Thời gian đăng ký môn học?",
+        ]
 
-            except Exception as e:
-                st.error(f"Loi lay thong ke: {e}")
-        else:
-            st.info("Khoi tao he thong de xem thong ke")
+        for q in example_questions:
+            if st.button(q, key=f"example_{q}", use_container_width=True):
+                st.session_state.messages.append({"role": "user", "content": q})
+                st.rerun()
 
-    # Footer
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### Huong dan")
-    st.sidebar.markdown("""
-    1. Cau hinh Embedding & LLM
-    2. Click **Khoi tao He thong**
-    3. Upload file audio
-    4. Dat cau hoi
-    """)
-    st.sidebar.markdown("---")
-    st.sidebar.caption("Audio IR System v1.0")
+        st.divider()
+
+        if st.button("🗑️ Xóa lịch sử chat", use_container_width=True):
+            st.session_state.messages = []
+            st.rerun()
+
+        st.divider()
+        st.caption("🎓 Hệ thống tra cứu thông tin")
+        st.caption("© 2025 - Đồ án chuyên ngành")
 
 
 if __name__ == "__main__":
