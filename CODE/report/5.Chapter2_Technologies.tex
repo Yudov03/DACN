@@ -1,0 +1,334 @@
+\section{Cơ sở lý thuyết}
+\label{chap:cosoly}
+
+\begin{indentParagraph}
+Chương này trình bày các nền tảng lý thuyết cốt lõi làm cơ sở cho việc xây dựng hệ thống truy xuất thông tin đa phương thức từ âm thanh. Các kiến thức được trình bày bao gồm: nhận dạng giọng nói tự động, mô hình ngôn ngữ lớn, kỹ thuật Retrieval-Augmented Generation, và các phương pháp nhúng văn bản kết hợp cơ sở dữ liệu vector. Ngoài ra, chương cũng đề cập đến các kỹ thuật xử lý tài liệu đa phương thức như OCR để mở rộng khả năng của hệ thống sang các định dạng văn bản.
+\end{indentParagraph}
+
+\subsection{Nhận dạng giọng nói tự động (ASR)}
+\label{sec:asr}
+
+\subsubsection{Khái niệm và nguyên lý hoạt động}
+
+Nhận dạng giọng nói tự động (ASR) là công nghệ cho phép máy tính chuyển đổi tín hiệu âm thanh giọng nói thành văn bản. Đây là một bài toán thuộc lĩnh vực xử lý ngôn ngữ tự nhiên và xử lý tín hiệu số, đòi hỏi sự kết hợp của nhiều kỹ thuật phức tạp \cite{vietnamese_asr}.
+
+Quy trình nhận dạng giọng nói truyền thống bao gồm năm bước chính. Đầu tiên, \textbf{tiền xử lý tín hiệu} thực hiện lọc nhiễu, chuẩn hóa biên độ và chia tín hiệu âm thanh thô thành các khung (frame) ngắn, thường từ 20-40ms với độ chồng lấp 50\%. Tiếp theo, \textbf{trích xuất đặc trưng} được thực hiện từ mỗi khung tín hiệu, các đặc trưng phổ biến bao gồm Mel-Frequency Cepstral Coefficients (MFCC), Filter Bank features và Spectrogram. Sau đó, \textbf{mô hình âm học (Acoustic Model)} ánh xạ các đặc trưng âm học sang các đơn vị ngữ âm (phoneme) hoặc các đơn vị ngôn ngữ khác. \textbf{Language Model} đánh giá xác suất của các chuỗi từ dựa trên ngữ cảnh ngôn ngữ tự nhiên. Cuối cùng, decoder kết hợp thông tin từ mô hình âm học và mô hình ngôn ngữ để tìm ra chuỗi từ có xác suất cao nhất.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{report/figures/asr_pipeline.png}
+    \caption{Quy trình nhận dạng giọng nói truyền thống}
+    \label{fig:asr_pipeline}
+\end{figure}
+
+Các hệ thống ASR hiện đại đã chuyển sang kiến trúc end-to-end dựa trên mạng nơ-ron sâu, đặc biệt là kiến trúc Transformer. Thay vì sử dụng nhiều thành phần riêng biệt, các mô hình này học trực tiếp ánh xạ từ tín hiệu âm thanh sang văn bản thông qua một mạng thống nhất. Kiến trúc Transformer, được giới thiệu vào năm 2017 bởi Vaswani et al \cite{vaswani2017attention}, sử dụng cơ chế Self-Attention cho phép mô hình học được các mối quan hệ xa trong chuỗi dữ liệu. 
+
+Một thành phần quan trọng khác của Transformer là \textbf{Positional Encoding}. Bản chất cơ chế Self-Attention là \textit{order-agnostic} - nó xử lý tất cả các token đồng thời mà không phân biệt thứ tự. Trong xử lý ngôn ngữ và âm thanh, thứ tự của token là yếu tố sống còn. Để giải quyết vấn đề này, Transformer thêm vector vị trí vào embedding của mỗi token:
+
+\begin{equation}
+    PE_{(pos, 2i)} = \sin\left(\frac{pos}{10000^{2i/d}}\right), \quad PE_{(pos, 2i+1)} = \cos\left(\frac{pos}{10000^{2i/d}}\right)
+    \label{eq:positional}
+\end{equation}
+
+Trong đó $pos$ là vị trí trong chuỗi và $i$ là chiều của embedding. Việc sử dụng hàm sine/cosine cho phép mô hình suy luận về vị trí tương đối giữa các token và tổng quát hóa sang các chuỗi dài hơn so với dữ liệu huấn luyện.
+
+\subsubsection{Whisper - Mô hình ASR đa ngôn ngữ}
+
+Whisper là mô hình ASR được phát triển bởi OpenAI, huấn luyện trên 680,000 giờ dữ liệu âm thanh đa ngôn ngữ thu thập từ web \cite{whisper2023}. Whisper nổi bật với khả năng đa ngôn ngữ, hỗ trợ nhận dạng và dịch hơn 99 ngôn ngữ bao gồm tiếng Việt. Mô hình có độ bền vững cao, xử lý tốt với nhiều điều kiện âm thanh khác nhau nhờ dữ liệu huấn luyện đa dạng. Whisper cung cấp timestamp word-level (thời gian bắt đầu và kết thúc cho từng từ) và hoạt động theo cơ chế zero-shot, không cần fine-tune cho từng ngôn ngữ cụ thể.
+
+\begin{table}[H]
+    \centering
+    \caption{Các phiên bản mô hình Whisper}
+    \label{tab:whisper_models}
+    \begin{tabular}{|l|c|c|c|}
+        \hline
+        \textbf{Phiên bản} & \textbf{Tham số} & \textbf{VRAM} & \textbf{Tốc độ tương đối} \\
+        \hline
+        tiny & 39M & 1GB & 32x \\
+        base & 74M & 1GB & 16x \\
+        small & 244M & 2GB & 6x \\
+        medium & 769M & 5GB & 2x \\
+        large-v3 & 1550M & 10GB & 1x \\
+        \hline
+    \end{tabular}
+\end{table}
+
+Kiến trúc của Whisper sử dụng Transformer encoder-decoder. Encoder nhận đầu vào là log-Mel spectrogram của audio được chia thành các đoạn 30 giây. Decoder sinh ra văn bản một cách tự hồi quy (autoregressive), sử dụng các token đặc biệt để điều khiển hành vi như ngôn ngữ, task (transcribe/translate), và timestamp.
+
+\subsubsection{Voice Activity Detection (VAD)}
+
+Voice Activity Detection (VAD) là kỹ thuật phát hiện các đoạn chứa giọng nói trong tín hiệu âm thanh, phân biệt với im lặng hoặc tiếng ồn nền. VAD đóng vai trò quan trọng trong việc tiền xử lý audio trước khi đưa vào mô hình ASR \cite{silero_vad}.
+
+Silero VAD là một mô hình VAD dựa trên mạng nơ-ron với kích thước nhỏ gọn (chỉ vài MB) nhưng độ chính xác cao. Mô hình hoạt động theo thời gian thực với độ trễ thấp, hỗ trợ nhiều tần số lấy mẫu (8kHz, 16kHz), và cung cấp xác suất liên tục thay vì quyết định nhị phân.
+
+Trong hệ thống ASR, VAD được sử dụng để phân đoạn audio dài thành các đoạn ngắn chứa giọng nói, loại bỏ các đoạn im lặng để tăng hiệu quả xử lý, xác định ranh giới câu/phát ngôn tự nhiên, và giảm thiểu lỗi nhận dạng do xử lý đoạn im lặng.
+
+\subsection{Mô hình ngôn ngữ lớn (Large Language Models)}
+\label{sec:llm}
+
+% \subsubsection{Sự phát triển của mô hình ngôn ngữ}
+
+% Mô hình ngôn ngữ (Language Model) là mô hình xác suất học cách dự đoán xác suất của một chuỗi từ hoặc từ tiếp theo trong chuỗi. Sự phát triển của mô hình ngôn ngữ đã trải qua nhiều giai đoạn quan trọng:
+
+% \textbf{N-gram Models (1990s-2000s)}: Các mô hình thống kê dựa trên xác suất có điều kiện của từ dựa trên N-1 từ trước đó. Hạn chế chính là không thể nắm bắt được ngữ cảnh xa và gặp vấn đề với các cụm từ hiếm.
+
+% \textbf{Neural Language Models (2010s)}: Sử dụng mạng nơ-ron để học biểu diễn phân tán của từ (word embeddings). RNN và LSTM cho phép mô hình hóa các phụ thuộc xa hơn trong chuỗi.
+
+% \textbf{Transformer-based Models (2017-nay)}: Kiến trúc Transformer \cite{vaswani2017attention} đã cách mạng hóa lĩnh vực NLP, cho phép xử lý song song và học các phụ thuộc xa hiệu quả hơn.
+
+% \subsubsection{Từ BERT đến GPT: Sự chuyển dịch kiến trúc}
+
+% Lĩnh vực NLP đã chứng kiến sự chuyển dịch từ kiến trúc Encoder-only (BERT \cite{devlin2018bert}) sang Decoder-only (GPT \cite{brown2020language}). BERT sử dụng ngữ cảnh hai chiều phù hợp cho các tác vụ hiểu văn bản, trong khi GPT với khả năng sinh văn bản tự hồi quy đã trở thành nền tảng cho các LLM hiện đại. PhoBERT \cite{phobert} là phiên bản BERT cho tiếng Việt, đạt kết quả tốt trên các tác vụ NLP tiếng Việt.
+
+\subsubsection{LLaMA, Qwen và các mô hình mã nguồn mở}
+
+LLaMA (Large Language Model Meta AI) \cite{touvron2023llama} là dòng mô hình ngôn ngữ mã nguồn mở được phát triển bởi Meta AI. LLaMA đã chứng minh rằng với dữ liệu huấn luyện chất lượng cao và kỹ thuật huấn luyện tối ưu, các mô hình nhỏ hơn có thể đạt hiệu suất tương đương với các mô hình lớn hơn nhiều.
+
+Qwen \cite{qwen2024} là dòng mô hình ngôn ngữ được phát triển bởi Alibaba Cloud, nổi bật với khả năng xử lý tốt các ngôn ngữ châu Á bao gồm tiếng Việt. Nghiên cứu ưu tiên sử dụng Qwen2.5 vì hiệu năng vượt trội trên tiếng Việt so với các dòng LLaMA, đồng thời hỗ trợ triển khai cục bộ qua Ollama \cite{ollama} giúp đảm bảo bảo mật dữ liệu và tiết kiệm chi phí.
+
+\subsubsection{Vấn đề hallucination trong LLM}
+
+Một trong những thách thức lớn nhất khi sử dụng LLM là hiện tượng hallucination - mô hình sinh ra thông tin sai sự thật nhưng trông có vẻ hợp lý \cite{ji2023hallucination}. Các loại hallucination phổ biến bao gồm \textbf{Factual hallucination} tạo ra các sự kiện và số liệu không có thật, \textbf{Faithfulness hallucination} khi câu trả lời không nhất quán với ngữ cảnh đã cho, và \textbf{Temporal hallucination} khi thông tin lỗi thời do knowledge cutoff.
+
+Một trong những nguyên nhân chính của hallucination \cite{zhang2023siren} xuất phát từ chất lượng dữ liệu huấn luyện - khi corpus huấn luyện chứa thông tin sai hoặc mâu thuẫn, mô hình sẽ học và tái tạo những sai sót này. Bản chất của việc huấn luyện language model cũng góp phần vào vấn đề này, khi mục tiêu tối ưu hướng đến việc sinh văn bản trôi chảy và tự nhiên hơn là đảm bảo tính chính xác của thông tin. Các mô hình ngôn ngữ lớn hiện tại thiếu cơ chế xác minh thông tin tích hợp sẵn, nghĩa là chúng không thể kiểm tra tính đúng đắn của output trước khi trả lời. Ngoài ra, knowledge cutoff date tạo ra giới hạn cứng về thời gian, khiến mô hình không thể cập nhật thông tin mới sau thời điểm huấn luyện.
+
+
+\subsection{Retrieval-Augmented Generation (RAG)}
+\label{sec:rag}
+
+\subsubsection{Kiến trúc RAG cơ bản}
+
+Retrieval-Augmented Generation (RAG) \cite{lewis2020rag} là kỹ thuật kết hợp khả năng truy xuất thông tin với khả năng sinh văn bản của LLM. RAG giải quyết vấn đề hallucination bằng cách cung cấp ngữ cảnh thực từ cơ sở tri thức cho mô hình.
+
+Quy trình RAG bao gồm hai giai đoạn chính:
+\begin{itemize}
+    \item \textbf{Giai đoạn Indexing}: Thu thập và tiền xử lý tài liệu từ nhiều nguồn, sau đó chia tài liệu thành các đoạn nhỏ (chunks) phù hợp. Tiếp theo, tạo vector embedding cho mỗi chunk và lưu trữ embedding vào cơ sở dữ liệu vector.
+    \item \textbf{Giai đoạn Query}: Nhận câu hỏi từ người dùng và tạo embedding cho câu hỏi. Sau đó, tìm kiếm các chunk liên quan trong vector database và xây dựng prompt với ngữ cảnh từ các chunk. Cuối cùng, LLM sinh câu trả lời dựa trên ngữ cảnh được cung cấp.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{report/figures/rag_architecture.png}
+    \caption{Kiến trúc Retrieval-Augmented Generation cơ bản}
+    \label{fig:rag_architecture}
+\end{figure}
+
+\subsubsection{Các kỹ thuật RAG nâng cao \cite{gao2023rag_survey}} 
+
+\textbf{Query Expansion} mở rộng câu hỏi gốc bằng cách sinh các biến thể câu hỏi bằng LLM, thêm các từ khóa liên quan, hoặc sử dụng HyDE (Hypothetical Document Embeddings) để sinh document giả định rồi tìm kiếm.
+
+\textbf{Hybrid Search} kết hợp nhiều phương pháp tìm kiếm bao gồm Vector search (semantic similarity) và Keyword search (BM25). BM25 (Best Matching 25) là thuật toán xếp hạng dựa trên tần suất từ, được coi là phiên bản cải tiến của TF-IDF. Công thức BM25 cho một cặp query $Q$ và document $D$:
+
+\begin{equation}
+    \text{BM25}(Q, D) = \sum_{i=1}^{n} \text{IDF}(q_i) \cdot \frac{f(q_i, D) \cdot (k_1 + 1)}{f(q_i, D) + k_1 \cdot \left(1 - b + b \cdot \frac{|D|}{\text{avgdl}}\right)}
+    \label{eq:bm25}
+\end{equation}
+
+Trong đó $f(q_i, D)$ là tần suất xuất hiện của term $q_i$ trong document $D$, $|D|$ là độ dài document, $\text{avgdl}$ là độ dài trung bình của tất cả documents, $k_1$ (thường $\approx 1.5$) điều chỉnh mức độ bão hòa tần suất, và $b$ (thường $\approx 0.75$) điều chỉnh mức độ chuẩn hóa theo độ dài. Kết quả từ BM25 và Vector search được kết hợp thông qua Fusion scoring.
+
+\textbf{Reranking} xếp hạng lại kết quả tìm kiếm ban đầu để cải thiện độ chính xác. Cần phân biệt hai kiến trúc encoder:
+\begin{itemize}
+    \item \textit{Bi-Encoder} (SBERT, E5): Mã hóa query và document \textbf{độc lập} thành hai vector riêng biệt, sau đó tính cosine similarity. Ưu điểm là có thể pre-compute embedding cho toàn bộ corpus và tìm kiếm nhanh qua ANN. Tuy nhiên, việc xử lý độc lập khiến mô hình không thể nắm bắt được sự tương tác trực tiếp giữa các token của query và document.
+    \item \textit{Cross-Encoder}: Ghép nối query và document thành một chuỗi duy nhất \texttt{[CLS] query [SEP] document [SEP]} rồi đưa qua Transformer. Mô hình xuất ra điểm relevance trực tiếp thay vì hai vector riêng:
+\begin{equation}
+    \text{score}(q, d) = \sigma(W \cdot \text{BERT}([q; d])_{[\text{CLS}]} + b)
+    \label{eq:crossencoder}
+\end{equation}
+\end{itemize}
+
+Cross-Encoder đạt độ chính xác cao hơn Bi-Encoder nhờ attention có thể ``nhìn thấy'' cả query và document đồng thời, nhưng độ phức tạp là $O(n \cdot m)$ với $n$ là số candidates, khiến nó không phù hợp cho retrieval toàn bộ corpus. Do đó, pipeline RAG thường dùng Bi-Encoder ở bước retrieval (nhanh, lấy top-k) và Cross-Encoder ở bước reranking (chính xác, chỉ xử lý k documents) \cite{nogueira2019passage}.
+
+\textbf{Anti-Hallucination Pipeline} là cơ chế kiểm soát chất lượng câu trả lời. Đầu tiên, tiến hành kiểm tra mức độ ``grounding'' của câu trả lời với các nguồn được truy xuất, xác định các claims có được hỗ trợ bởi context hay không. Sau đó, phát hiện và giải quyết xung đột khi nhiều nguồn cung cấp thông tin mâu thuẫn (ưu tiên nguồn mới hơn hoặc tổng hợp tất cả phiên bản). Và đặc biệt là từ chối trả lời một cách an toàn khi không có đủ thông tin trong knowledge base, thay vì sinh ra câu trả lời bịa đặt.
+
+\subsubsection{Reciprocal Rank Fusion (RRF)}
+
+Reciprocal Rank Fusion \cite{cormack1998reciprocal} là kỹ thuật kết hợp kết quả từ nhiều hệ thống xếp hạng khác nhau. Công thức RRF:
+
+\begin{equation}
+    \text{RRF}(d) = \sum_{r \in R} \frac{1}{k + r(d)}
+    \label{eq:rrf}
+\end{equation}
+
+Trong đó $d$ là document cần tính điểm, $R$ là tập các danh sách xếp hạng, $r(d)$ là thứ hạng của $d$ trong danh sách $r$, và $k$ là hằng số (thường $k=60$).
+
+RRF có ưu điểm là không cần chuẩn hóa điểm giữa các hệ thống, robust với outliers, và đơn giản hiệu quả.
+
+\subsection{Nhúng văn bản và cơ sở dữ liệu Vector}
+\label{sec:embedding}
+
+\subsubsection{Sentence Embeddings}
+
+Text embedding là kỹ thuật biểu diễn văn bản dưới dạng vector số học trong không gian nhiều chiều, sao cho các văn bản có ngữ nghĩa tương đồng sẽ có vector gần nhau. Các mô hình sentence embedding hiện đại như Sentence-BERT \cite{reimers2019sentence} tạo vector cho cả câu hoặc đoạn văn, nắm bắt được ngữ nghĩa tổng thể thay vì chỉ từng từ riêng lẻ.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.65\textwidth]{report/figures/embedding_space.png}
+    \caption{Minh họa không gian embedding}
+    \label{fig:embedding_space}
+\end{figure}
+
+\subsubsection{SBERT và E5}
+
+Sentence-BERT (SBERT) \cite{reimers2019sentence} sử dụng kiến trúc Siamese network với BERT làm backbone, được huấn luyện để tối ưu hóa cosine similarity giữa các câu tương đồng. E5 \cite{wang2022e5} là dòng mô hình embedding mới hơn, sử dụng contrastive learning và đạt kết quả tốt hơn SBERT trên nhiều benchmark retrieval.
+
+\subsubsection{Cơ sở dữ liệu Vector}
+
+Cơ sở dữ liệu vector (Vector Database) là hệ thống lưu trữ được tối ưu cho việc lưu trữ và tìm kiếm các vector nhiều chiều. Khác với database truyền thống tìm kiếm exact match, vector database tìm kiếm approximate nearest neighbors (ANN) \cite{johnson2019faiss}.
+
+\textbf{Các thuật toán ANN phổ biến}: HNSW (Hierarchical Navigable Small World) xây dựng đồ thị nhiều tầng, tìm kiếm từ tầng cao xuống thấp với ưu điểm tốc độ query nhanh và độ chính xác cao. IVF (Inverted File Index) chia không gian vector thành các cluster, chỉ tìm trong các cluster gần nhất với query giúp tiết kiệm bộ nhớ. PQ (Product Quantization) nén vector bằng cách chia thành các sub-vectors và quantize, giảm đáng kể kích thước lưu trữ.
+
+Qdrant \cite{qdrant} là một vector database mã nguồn mở, được thiết kế cho các ứng dụng AI/ML. Qdrant hỗ trợ filtering kết hợp với vector search, payload storage cho metadata, horizontal scaling, REST và gRPC API, và hybrid search (sparse + dense vectors).
+
+\subsubsection{Độ đo tương đồng}
+
+Trong các hệ thống RAG hiện đại, \textbf{Cosine Similarity} là độ đo tiêu chuẩn để đánh giá sự tương đồng ngữ nghĩa giữa các vector:
+\begin{equation}
+    \text{cosine}(\mathbf{u}, \mathbf{v}) = \frac{\mathbf{u} \cdot \mathbf{v}}{||\mathbf{u}|| \cdot ||\mathbf{v}||}
+    \label{eq:cosine}
+\end{equation}
+
+Cosine similarity đo góc giữa hai vector, không phụ thuộc vào độ dài vector, phù hợp cho text embeddings đã được chuẩn hóa.
+
+\subsection{Xử lý tài liệu đa phương thức}
+\label{sec:multimodal}
+
+\subsubsection{Optical Character Recognition (OCR)}
+
+OCR là công nghệ chuyển đổi hình ảnh chứa văn bản thành văn bản có thể chỉnh sửa được, đóng vai trò quan trọng trong việc mở rộng khả năng xử lý của hệ thống sang các định dạng như PDF scan và hình ảnh chụp tài liệu \cite{paddleocr}. Quy trình OCR hiện đại bao gồm ba bước: Text Detection xác định vùng chứa văn bản, Text Recognition nhận dạng ký tự, và Post-processing sửa lỗi. Chi tiết về engine OCR được sử dụng sẽ được trình bày trong Chương 3.
+
+\subsubsection{Xử lý PDF và văn bản có cấu trúc}
+
+PyMuPDF \cite{pymupdf} là thư viện Python cho phép trích xuất nội dung từ file PDF. Thư viện này có thể trích xuất text với thông tin vị trí (bounding box), trích xuất hình ảnh nhúng trong PDF, phát hiện PDF text-based vs image-based, và xử lý bảng biểu cũng như cấu trúc phức tạp. Hệ thống sử dụng phương pháp hybrid để xử lý PDF. Đầu tiên thử trích xuất text trực tiếp. Nếu text quá ít, render page thành ảnh và chạy OCR. Cuối cùng kết hợp kết quả và giữ nguyên thứ tự trang.
+
+\subsection{Phân đoạn văn bản (Text Chunking)}
+\label{sec:chunking}
+
+\subsubsection{Các phương pháp chunking}
+
+Chunking là bước quan trọng trong pipeline RAG, ảnh hưởng trực tiếp đến chất lượng retrieval \cite{langchain_chunking}. Chunk quá dài sẽ chứa nhiều thông tin không liên quan, chunk quá ngắn sẽ thiếu ngữ cảnh.
+
+\textbf{Fixed-size Chunking}: Chia văn bản theo số ký tự/token cố định với overlap. Đơn giản nhưng có thể cắt giữa câu.
+
+\textbf{Recursive Character Chunking}: Thử chia theo các separator theo thứ tự ưu tiên (paragraph, sentence, word). Giữ được cấu trúc văn bản tốt hơn.
+
+\textbf{Semantic Chunking}: Sử dụng embedding để phát hiện ranh giới ngữ nghĩa. Nhóm các câu có ngữ nghĩa liên quan vào cùng chunk.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{report/figures/chunking_methods.png}
+    \caption{So sánh các phương pháp chunking}
+    \label{fig:chunking_methods}
+\end{figure}
+
+\subsubsection{Chunking cho audio transcript và bảo toàn Timestamp}
+
+Đối với transcript từ audio, việc chunking cần đặc biệt chú ý đến bài toán \textbf{timestamp preservation} - duy trì ánh xạ giữa văn bản và thời điểm trong file gốc. Đây là yếu tố then chốt cho tính năng trích dẫn nguồn âm thanh.
+
+Whisper cung cấp timestamp ở mức word-level, mỗi từ được gắn với tuple $(t_{start}, t_{end})$. Mỗi chunk được lưu kèm các trường \texttt{start\_time} và \texttt{end\_time}, lấy từ timestamp của từ đầu tiên và cuối cùng trong chunk. Hệ thống sẽ ưu tiên chia tại các điểm ngắt từ VAD (Voice Activity Detection) hoặc các dấu chấm câu, thay vì cắt giữa từ.
+
+Qdrant hỗ trợ payload storage, cho phép lưu metadata cùng với vector embedding. Khi truy xuất, hệ thống có thể trả về cả nội dung văn bản và vị trí chính xác trong file audio/video gốc. Cấu trúc metadata của một chunk audio có dạng:
+\begin{center}
+    \begin{verbatim}
+    {
+      "text": "Nội dung transcript...",
+      "source": "lecture_01.mp4",
+      "start_time": 125.4,
+      "end_time": 142.8,
+      "embedding": [0.12, -0.34, ...]
+    }
+    \end{verbatim}
+\end{center}
+
+
+\subsection{Các nghiên cứu liên quan}
+\label{sec:related_work}
+
+\subsubsection{Hệ thống hỏi đáp dựa trên tri thức}
+
+Izacard et al \cite{izacard2022few} đã nghiên cứu về few-shot learning kết hợp với retrieval, chứng minh rằng việc cung cấp tài liệu liên quan có thể cải thiện đáng kể hiệu suất của LLM trên các tác vụ knowledge-intensive.
+
+Mialon et al \cite{mialon2023augmented} đã tổng hợp các phương pháp augment LLM với công cụ bên ngoài, bao gồm retrieval, calculator, code interpreter. Nghiên cứu này cung cấp framework để hiểu cách các công cụ hỗ trợ LLM vượt qua các giới hạn nội tại.
+
+\subsubsection{Các hệ thống tương tự}
+
+Các hệ thống hỏi đáp AI hiện có đều có những hạn chế nhất định. ChatGPT \cite{chatgpt} có khả năng xử lý đa dạng nhưng không hỗ trợ knowledge base cục bộ và phải trả phí. Perplexity AI \cite{perplexity} kết hợp RAG với web search nhưng không cho phép upload tài liệu riêng. NotebookLM \cite{notebooklm} của Google cho phép chat với tài liệu nhưng giới hạn số lượng và không hỗ trợ audio transcript trực tiếp. Điểm chung là các hệ thống này đều yêu cầu kết nối internet và không thể triển khai hoàn toàn cục bộ. Hệ thống đề xuất trong nghiên cứu này khắc phục các hạn chế trên bằng cách hỗ trợ đầy đủ xử lý audio, triển khai local, cơ chế anti-hallucination, và hoàn toàn miễn phí.
+
+% \subsubsection{ASR cho tiếng Việt}
+
+% Nghiên cứu về ASR tiếng Việt \cite{vietnamese_asr} đã chỉ ra các thách thức đặc thù của ngôn ngữ bao gồm hệ thống thanh điệu 6 thanh ảnh hưởng đến acoustic modeling, từ vựng mở và từ ghép linh hoạt, sự khác biệt giữa các vùng miền, và thiếu dữ liệu huấn luyện quy mô lớn.
+
+% Whisper với dữ liệu huấn luyện đa dạng đã cho kết quả tốt với tiếng Việt, tuy nhiên vẫn cần post-processing để sửa lỗi chính tả và dấu thanh.
+
+\subsection{Các phương pháp đánh giá hệ thống}
+\label{sec:evaluation_metrics}
+
+Việc đánh giá hệ thống truy xuất thông tin đòi hỏi các chỉ số định lượng rõ ràng. Phần này trình bày các thông số được sử dụng để đánh giá từng thành phần của hệ thống.
+
+\subsubsection{Word Error Rate (WER) cho ASR}
+
+WER là chỉ số tiêu chuẩn để đánh giá chất lượng nhận dạng giọng nói, dựa trên khoảng cách Levenshtein giữa transcript được tạo ra và transcript chuẩn (ground truth):
+
+\begin{equation}
+    \text{WER} = \frac{S + D + I}{N} \times 100\%
+    \label{eq:wer}
+\end{equation}
+
+Trong đó: $S$ là số từ bị thay thế sai, $D$ là số từ bị thiếu, $I$ là số từ bị thêm thừa, $N$ là tổng số từ trong transcript chuẩn.
+
+Chỉ số WER càng thấp thì kết quả càng tốt. WER = 15\% nghĩa là cứ 100 từ thì có 15 lỗi (tương đương độ chính xác 85\%). Với tiếng Việt, WER dưới 15\% được coi là chất lượng tốt cho các ứng dụng thực tế.
+
+\subsubsection{Mean Reciprocal Rank (MRR) cho Retrieval}
+
+MRR đánh giá chất lượng xếp hạng kết quả tìm kiếm, đặc biệt quan trọng khi người dùng chỉ quan tâm đến kết quả đầu tiên đúng:
+
+\begin{equation}
+    \text{MRR} = \frac{1}{|Q|} \sum_{i=1}^{|Q|} \frac{1}{\text{rank}_i}
+    \label{eq:mrr}
+\end{equation}
+
+Trong đó $|Q|$ là số query, $\text{rank}_i$ là vị trí của kết quả đúng đầu tiên cho query thứ $i$. MRR = 1.0 nghĩa là kết quả đúng luôn ở vị trí đầu tiên. MRR = 0.5 nghĩa là trung bình kết quả đúng ở vị trí thứ 2.
+
+\subsubsection{Recall@k cho Retrieval}
+
+Recall@k đo tỷ lệ documents liên quan được tìm thấy trong top-k kết quả:
+
+\begin{equation}
+    \text{Recall@k} = \frac{|\text{Relevant} \cap \text{Top-k}|}{|\text{Relevant}|}
+    \label{eq:recall}
+\end{equation}
+
+Trong các hệ thống RAG, Recall@k quan trọng hơn Precision vì LLM có thể lọc bỏ thông tin không liên quan, nhưng không thể bổ sung thông tin bị bỏ sót trong bước retrieval.
+
+\subsubsection{Grounding Accuracy cho Anti-Hallucination}
+
+Grounding Accuracy đánh giá mức độ câu trả lời được ``neo'' vào các nguồn được cung cấp:
+
+\begin{equation}
+    \text{Grounding Accuracy} = \frac{\text{Số claims có nguồn hỗ trợ}}{\text{Tổng số claims trong câu trả lời}}
+    \label{eq:grounding}
+\end{equation}
+
+Việc xác định một claim có được ``hỗ trợ'' hay không dựa trên khái niệm \textbf{Natural Language Inference (NLI)} hay còn gọi là \textbf{Textual Entailment}. Trong NLI, cho một cặp (premise, hypothesis), mô hình phân loại mối quan hệ thành ba nhãn:
+\begin{itemize}
+    \item \textbf{Entailment}: Premise \textit{kéo theo} hypothesis - nếu premise đúng thì hypothesis chắc chắn đúng
+    \item \textbf{Contradiction}: Premise \textit{mâu thuẫn} với hypothesis
+    \item \textbf{Neutral}: Không đủ thông tin để kết luận
+\end{itemize}
+
+Một claim trong câu trả lời được coi là ``grounded'' nếu tồn tại ít nhất một đoạn context mà từ đó claim được \textit{entail} (kéo theo logic). Claims được phân loại là Neutral hoặc Contradiction với tất cả context sẽ bị đánh dấu là potential hallucination. Cách tiếp cận NLI này cung cấp cơ sở khoa học vững chắc hơn so với việc chỉ kiểm tra sự trùng khớp từ ngữ bề mặt.
+
+\subsection*{Tổng kết chương}
+
+Chương này đã trình bày các nền tảng lý thuyết cốt lõi cho hệ thống truy xuất thông tin đa phương thức từ âm thanh. Trong lĩnh vực nhận dạng giọng nói, mô hình Whisper của OpenAI nổi lên như giải pháp toàn diện với khả năng nhận dạng đa ngôn ngữ, bao gồm tiếng Việt, đồng thời cung cấp timestamp chính xác đến từng từ. Kết hợp với Voice Activity Detection, hệ thống có thể phân đoạn audio dài một cách hiệu quả và loại bỏ các đoạn im lặng không cần thiết.
+
+Sự phát triển của các mô hình ngôn ngữ lớn mã nguồn mở như Qwen2.5 và LLaMA, cùng với công cụ triển khai Ollama, đã mở ra khả năng xây dựng hệ thống hoàn toàn cục bộ. Điều này đáp ứng đồng thời yêu cầu về bảo mật dữ liệu và tiết kiệm chi phí vận hành, những yếu tố đặc biệt quan trọng trong môi trường giáo dục.
+
+Kiến trúc Retrieval-Augmented Generation đóng vai trò trung tâm trong việc giải quyết vấn đề hallucination của LLM thông qua việc cung cấp ngữ cảnh thực từ cơ sở tri thức. Chương đã phân tích chi tiết các kỹ thuật nâng cao: thuật toán BM25 cho sparse retrieval với các tham số $k_1$ và $b$ điều chỉnh tần suất và độ dài, sự khác biệt giữa Bi-Encoder và Cross-Encoder, cũng như cách duy trì timestamp mapping qua quá trình chunking để trích dẫn nguồn âm thanh. Qdrant cùng các thuật toán Approximate Nearest Neighbors tạo nền tảng cho việc tìm kiếm ngữ nghĩa hiệu quả trên quy mô lớn.
+
+Cuối cùng, các phương pháp đánh giá định lượng được định nghĩa rõ ràng về mặt toán học, tạo cơ sở cho việc đo lường hiệu quả hệ thống trong các chương tiếp theo.
+
+Các nền tảng lý thuyết được trình bày trong chương này sẽ làm cơ sở cho việc thiết kế kiến trúc hệ thống và triển khai các module trong các chương tiếp theo.
+
+% \addtocontents{toc}{\protect\setcounter{tocdepth}{3}}
+
+\newpage

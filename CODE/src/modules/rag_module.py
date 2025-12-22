@@ -550,6 +550,14 @@ Tra loi:"""
             if source["end_time"] is not None:
                 source["end_time_formatted"] = self._format_timestamp(source["end_time"])
 
+            # TODO: Implement deep_link for audio/video sources (Chapter 4 design)
+            # Format: ?doc=doc_id&t=start_time (giay)
+            # Cho phep user click vao citation de nhay den dung timestamp trong audio/video player
+            # Example:
+            #   if source["start_time"] is not None:
+            #       doc_id = metadata.get("doc_id", source["chunk_id"])
+            #       source["deep_link"] = f"?doc={doc_id}&t={int(source['start_time'])}"
+
             sources.append(source)
 
         return sources

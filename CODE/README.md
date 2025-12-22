@@ -1,6 +1,6 @@
-# Audio Information Retrieval System
+# Multimodal Document & Audio Information Retrieval System
 
-Hệ thống Truy xuất Thông tin từ Âm thanh và Tài liệu sử dụng ASR (Whisper), Document Processing, Vector Database (Qdrant), LLM (Ollama/OpenAI/Google Gemini), và Text-to-Speech.
+Hệ thống Truy xuất Thông tin Đa phương tiện sử dụng ASR (Faster-Whisper), Document Processing (PaddleOCR), Vector Database (Qdrant), LLM (Ollama/OpenAI/Google Gemini), và Text-to-Speech.
 
 ## Kiến trúc
 
@@ -12,9 +12,13 @@ Hệ thống Truy xuất Thông tin từ Âm thanh và Tài liệu sử dụng A
 │   (.mp3, .mp4, .wav)   │   (.pdf, .docx, .xlsx, .pptx, .html, etc.)    │
 │         │              │               │                                 │
 │         ▼              │               ▼                                 │
-│   ASR (Whisper)        │     Document Processor                          │
-│         │              │     (PDF/DOCX/Excel/OCR)                        │
+│   ASR (Faster-Whisper) │     Document Processor                          │
+│   + VAD (optional)     │     (Hybrid PDF/OCR/Text)                       │
 │         └──────────────┴───────────────┬────────────────────────────────┤
+│                                        ▼                                 │
+│                   Post-Processing (LLM Vietnamese Correction)            │
+│                              + Cache (MD5 hash)                          │
+│                                        │                                 │
 │                                        ▼                                 │
 │                              Text Chunking                               │
 │                                    │                                     │
@@ -42,6 +46,9 @@ Hệ thống Truy xuất Thông tin từ Âm thanh và Tài liệu sử dụng A
 │                                    ▼                                     │
 │                         Answer + TTS Output                              │
 │                    (Text-to-Speech với giọng Việt)                       │
+├─────────────────────────────────────────────────────────────────────────┤
+│                           VOICE INPUT                                    │
+│   🎤 Microphone → ASR (Whisper) → Text Query → RAG → Answer → 🔊 TTS   │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -69,10 +76,10 @@ pip install -r requirements.txt
 ```bash
 # Tải và cài đặt từ: https://ollama.com/download
 # Sau khi cài xong, pull model:
-ollama pull llama3.2
+ollama pull qwen2.5:7b
 
-# Hoặc model tốt hơn cho tiếng Việt:
-ollama pull qwen2.5
+# Model nhẹ hơn:
+ollama pull llama3.2
 ```
 
 ### 3. Cấu hình
@@ -86,7 +93,7 @@ Chỉnh sửa `.env`:
 ```env
 # Option 1: Local (miễn phí, offline) - RECOMMENDED
 LLM_PROVIDER=ollama
-OLLAMA_MODEL=llama3.2
+OLLAMA_MODEL=qwen2.5:7b
 EMBEDDING_PROVIDER=local
 LOCAL_EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-mpnet-base-v2
 
@@ -120,26 +127,76 @@ python scripts/reindex_documents.py --file doc_id  # Re-index single file
 ### 5. Chạy ứng dụng
 
 ```bash
-# Web UI cho sinh viên (tự động start Ollama)
-streamlit run app.py
+# === Student Portal (Recommended) ===
+streamlit run app.py                    # Sinh viên tra cứu, tự động start Ollama
 
-# CLI interactive mode
-python main.py --mode interactive
+# === Admin Portal ===
+streamlit run app_admin.py --server.port 8502   # Quản trị viên upload/quản lý
+
+# === CLI Mode ===
+python main.py --mode interactive       # CLI interactive
+python main.py --mode query --question "Học phí bao nhiêu?"
+python main.py --mode stats             # Xem thống kê
 ```
 
-**Features (app.py - Student Portal):**
-- 💬 **Chat**: Hỏi đáp với Knowledge Base
-- 🔍 **Search**: Tìm kiếm semantic
-- 📚 **Sources**: Hiển thị nguồn tham khảo
-- 🔊 **TTS**: Text-to-Speech (Vietnamese)
-- ⚡ **Auto-start**: Tự động khởi động Ollama server
+> **Note:** Lần chạy đầu tiên sẽ tải ~1.5GB models (Whisper, embedding, PaddleOCR). Sau đó kết quả post-processing được cache để tăng tốc khi re-index.
+
+## Ứng dụng
+
+### app.py - Student Portal
+
+Giao diện dành cho **sinh viên** tra cứu thông tin:
+- **Voice Input**: Hỏi bằng giọng nói (nhấn 🎤 và nói tiếng Việt)
+- Chat: Hỏi đáp với Knowledge Base
+- Search: Tìm kiếm semantic
+- Sources: Hiển thị nguồn tham khảo
+- **Auto-play TTS**: Tự động đọc câu trả lời khi hỏi bằng giọng nói
+- TTS: Text-to-Speech (Vietnamese)
+- Auto-start: Tự động khởi động Ollama server
+
+```bash
+streamlit run app.py
+# Mặc định: http://localhost:8501
+```
+
+### app_admin.py - Admin Portal
+
+Giao diện dành cho **quản trị viên** (nhà trường):
+- Upload: Upload tài liệu trực tiếp
+- Import: Import từ data/resource/
+- Quản lý: Xem, xóa, re-index documents
+- Thống kê: Xem số lượng documents, chunks
+
+```bash
+streamlit run app_admin.py --server.port 8502
+# Mặc định: http://localhost:8502
+```
+
+### main.py - CLI
+
+Command-line interface cho scripting:
+
+```bash
+# Interactive mode
+python main.py --mode interactive
+
+# Single query
+python main.py --mode query --question "Học phí năm 2024?"
+
+# Process documents
+python main.py --mode process --input data/documents/
+
+# Show stats
+python main.py --mode stats
+```
 
 ## Cấu trúc thư mục
 
 ```
 CODE/
 ├── main.py                 # Entry point (CLI)
-├── app.py                  # DocChat Platform (Web UI)
+├── app.py                  # Student Portal (Streamlit)
+├── app_admin.py            # Admin Portal (Streamlit)
 ├── requirements.txt        # Dependencies
 ├── .env.example            # Config template
 │
@@ -147,7 +204,7 @@ CODE/
 │   ├── config.py           # System config
 │   └── modules/
 │       │  # Core Modules
-│       ├── asr_module.py               # Whisper ASR
+│       ├── asr_module.py               # Faster-Whisper ASR + VAD
 │       ├── chunking_module.py          # Text Splitter
 │       ├── embedding_module.py         # SBERT/E5/OpenAI/Google
 │       ├── vector_db_module.py         # Qdrant + BM25 Hybrid
@@ -159,17 +216,22 @@ CODE/
 │       ├── answer_verification.py      # Grounding check + abstention
 │       ├── conflict_detection.py       # Date-aware conflict resolution
 │       │
-│       │  # Document Processing (34 formats)
+│       │  # Document Processing (68 formats)
 │       ├── document_processor/
 │       │   ├── base.py                 # Base processor classes
-│       │   ├── pdf_processor.py        # PDF extraction + OCR
-│       │   ├── docx_processor.py       # Word document processor
+│       │   ├── pdf_processor.py        # Hybrid PDF + OCR
+│       │   ├── word_processor.py       # Word document processor
 │       │   ├── excel_processor.py      # Excel spreadsheets
 │       │   ├── pptx_processor.py       # PowerPoint presentations
 │       │   ├── text_processor.py       # Plain text processor
-│       │   ├── audio_processor.py      # Audio files (Whisper)
+│       │   ├── image_processor.py      # Image OCR (PaddleOCR)
+│       │   ├── audio_processor.py      # Audio files (Faster-Whisper)
 │       │   ├── video_processor.py      # Video files (FFmpeg)
+│       │   ├── ocr_engine.py           # PaddleOCR wrapper
 │       │   └── unified_processor.py    # Auto-detect processor
+│       │
+│       │  # Post-Processing
+│       ├── post_processing.py          # Vietnamese text correction + cache
 │       │
 │       │  # Knowledge Base
 │       ├── knowledge_base.py           # Document management
@@ -194,23 +256,13 @@ CODE/
 ├── evaluation/             # System evaluation
 │   ├── datasets/           # Test datasets (Vietnamese, SQuAD)
 │   ├── scripts/            # Evaluation scripts
-│   │   ├── evaluate_system.py          # Basic evaluation
-│   │   ├── evaluate_real_datasets.py   # Real datasets evaluation
-│   │   ├── run_benchmark.py            # Full benchmark
-│   │   ├── run_evaluation.py           # Quick/full evaluation
-│   │   ├── tune_parameters.py          # Parameter tuning
-│   │   └── download_dataset.py         # Dataset downloader
-│   ├── results/            # Evaluation results
-│   ├── benchmark_results/  # Benchmark results
-│   └── tuning_results/     # Parameter tuning results
+│   └── results/            # Evaluation results
 │
 ├── tests/
-│   ├── conftest.py         # Pytest fixtures
 │   ├── run_tests.py        # Test runner script
 │   ├── test_unit.py        # Unit tests (43 tests)
 │   ├── test_integration.py # Integration tests (12 tests)
-│   ├── test_e2e.py         # E2E tests (9 tests)
-│   └── test_data/          # Test data files
+│   └── test_e2e.py         # E2E tests (9 tests)
 │
 └── data/                   # Runtime data storage
     ├── resource/           # INPUT: Upload documents here
@@ -229,15 +281,24 @@ CODE/
 
 ### Core Modules
 
-#### 1. ASR Module - Whisper
+#### 1. ASR Module - Faster-Whisper
+
 ```python
 from src.modules import WhisperASR
 
-asr = WhisperASR(model_name="base")  # tiny, base, small, medium, large
+asr = WhisperASR(
+    model_name="base",      # tiny, base, small, medium, large-v3
+    engine="faster",        # faster (4x speed), openai (original)
+    device="cuda",          # cuda, cpu, auto
+    vad_filter=True         # Voice Activity Detection
+)
 transcript = asr.transcribe_audio("audio.mp3")
 ```
 
+**VAD (Voice Activity Detection):** Tự động skip silence, giảm hallucination, xử lý nhanh hơn.
+
 #### 2. Embedding Module - Local/Cloud
+
 ```python
 from src.modules import TextEmbedding
 
@@ -250,6 +311,7 @@ embeddings = embedder.encode_chunks(chunks)
 ```
 
 #### 3. Vector Database - Qdrant + Hybrid Search
+
 ```python
 from src.modules import VectorDatabase
 
@@ -265,6 +327,7 @@ results = vector_db.hybrid_search(
 ```
 
 #### 4. RAG Module - Ollama/GPT/Gemini
+
 ```python
 from src.modules import RAGSystem
 
@@ -276,7 +339,19 @@ rag = RAGSystem(
 response = rag.query("Nội dung chính là gì?")
 ```
 
-#### 5. Reranker Module
+#### 5. Post-Processing - Vietnamese Text Correction
+
+```python
+from src.modules import PostProcessor
+
+pp = PostProcessor(method="ollama")  # ollama, transformer, none
+result = pp.process(raw_text)        # Cache HIT ~0.0s, MISS ~5-30s
+```
+
+Post-processing tự động sửa lỗi OCR/ASR cho tiếng Việt với caching (MD5 hash).
+
+#### 6. Reranker Module
+
 ```python
 from src.modules import CrossEncoderReranker
 
@@ -286,7 +361,8 @@ results = vector_db.search_with_rerank(query, emb, reranker, top_k=5)
 
 ### Anti-Hallucination Modules
 
-#### 6. Answer Verification
+#### 7. Answer Verification
+
 ```python
 from src.modules import AnswerVerifier, AbstentionChecker
 
@@ -318,7 +394,8 @@ should_abstain, reason = checker.should_abstain(
 | PARTIALLY_GROUNDED | Một số claims có trong context |
 | LIKELY_HALLUCINATED | Claims không có trong context |
 
-#### 7. Conflict Detection
+#### 8. Conflict Detection
+
 ```python
 from src.modules import ConflictDetector
 
@@ -347,7 +424,8 @@ print(result.resolution_note)     # "Using latest information from 2024"
 
 ### Document Processing Modules
 
-#### 8. Document Processor - 34 Formats
+#### 9. Document Processor - 68 Formats
+
 ```python
 from src.modules import UnifiedProcessor
 
@@ -374,6 +452,14 @@ print(doc.metadata)      # Document metadata
 | **Video** | .mp4, .avi, .mkv, .mov, .wmv, .flv, .webm, .m4v |
 | **Images (OCR)** | .png, .jpg, .jpeg, .bmp, .tiff, .tif, .webp |
 
+**PDF Processing - Hybrid Mode:**
+```python
+# Hybrid mode (default): Smart text extraction + OCR chỉ cho vùng ảnh
+# Nhanh hơn 10x so với full-page OCR, chất lượng cao hơn
+processor = UnifiedProcessor()
+doc = processor.process("mixed_content.pdf")  # Text + scanned images
+```
+
 **Audio/Video Processing với timestamps:**
 ```python
 from src.modules import UnifiedProcessor, format_transcript_with_timestamps
@@ -397,7 +483,8 @@ print(doc.metadata.extra)
 # {'duration_seconds': 3600, 'resolution': '1920x1080', ...}
 ```
 
-#### 9. Knowledge Base - Document Management
+#### 10. Knowledge Base - Document Management
+
 ```python
 from src.modules import KnowledgeBase
 
@@ -423,7 +510,8 @@ print(f"Documents: {stats.total_documents}")
 print(f"Chunks: {stats.total_chunks}")
 ```
 
-#### 10. Text-to-Speech (TTS) Module
+#### 11. Text-to-Speech (TTS) Module
+
 ```python
 from src.modules import TextToSpeech, text_to_speech
 
@@ -456,7 +544,8 @@ tts.save_to_file("output.mp3", "Text content")
 
 ### Optimization Modules
 
-#### 11. Query Expansion
+#### 12. Query Expansion
+
 ```python
 from src.modules import QueryExpander, MultiQueryRetriever
 
@@ -470,7 +559,8 @@ retriever = MultiQueryRetriever(vector_db, embedder, expander)
 results = retriever.retrieve(query, top_k=5, fusion_method="rrf")
 ```
 
-#### 12. Context Compression
+#### 13. Context Compression
+
 ```python
 from src.modules import ContextCompressor
 
@@ -479,7 +569,8 @@ compressor = ContextCompressor(method="extractive", max_tokens=500)
 compressed, chunks = compressor.compress(query, contexts)
 ```
 
-#### 13. Caching
+#### 14. Caching
+
 ```python
 from src.modules import CacheManager
 
@@ -493,7 +584,8 @@ cached = cache.get_embedding("text", "model")
 cache.set_response(prompt, model, response)
 ```
 
-#### 14. Prompt Templates (9 Templates)
+#### 15. Prompt Templates (9 Templates)
+
 ```python
 from src.modules import PromptTemplateManager
 
@@ -578,6 +670,8 @@ See `evaluation/README.md` for more details.
 | LLM | Local | Ollama (qwen2.5) | - |
 | LLM | Google | gemini-2.0-flash | - |
 | LLM | OpenAI | gpt-4o-mini | - |
+| ASR | Local | Faster-Whisper | - |
+| OCR | Local | PaddleOCR | - |
 
 ### Environment Variables
 
@@ -589,7 +683,7 @@ LLM_PROVIDER=ollama              # ollama, google, openai
 EMBEDDING_PROVIDER=local         # local, google, openai
 
 # === Ollama (Local LLM) ===
-OLLAMA_MODEL=llama3.2            # llama3.2, qwen2.5, mistral, etc.
+OLLAMA_MODEL=qwen2.5:7b          # qwen2.5, llama3.2, mistral, etc.
 OLLAMA_BASE_URL=http://localhost:11434
 
 # === Local Embedding ===
@@ -606,9 +700,26 @@ QDRANT_HOST=localhost
 QDRANT_PORT=6333
 COLLECTION_NAME=knowledge_base
 
-# === Whisper ASR ===
-WHISPER_MODEL=base               # tiny, base, small, medium, large
+# === Faster-Whisper ASR ===
+WHISPER_ENGINE=faster            # faster (4x speed), openai (original)
+WHISPER_MODEL=base               # tiny, base, small, medium, large-v3
 WHISPER_DEVICE=cuda              # cuda or cpu
+WHISPER_VAD_FILTER=false         # Enable Voice Activity Detection
+
+# === PDF Processing ===
+PDF_HYBRID_MODE=true             # Smart text + OCR for images only
+
+# === OCR (PaddleOCR) ===
+OCR_ENGINE=paddleocr             # paddleocr (recommended), easyocr
+OCR_LANGUAGE=vi
+OCR_USE_GPU=true
+OCR_DPI=400
+OCR_MAX_IMAGE_SIZE=3500          # Resize large images
+OCR_PREPROCESS=true              # Deskew, denoise, binarize
+
+# === Post-Processing ===
+POSTPROCESS_INDIRECT=ollama      # ollama, transformer, none
+POSTPROCESS_CACHE=true           # Cache results (recommended)
 
 # === Chunking ===
 CHUNK_SIZE=500
@@ -660,39 +771,39 @@ tests/
 ### Test Coverage (64 Tests)
 
 **Unit Tests (43):**
-- ✅ Chunking (fixed, sentence, recursive)
-- ✅ Embedding (local SBERT/E5, similarity)
-- ✅ VectorDB (init, add, search, stats)
-- ✅ Document Processor (34 formats)
-- ✅ Knowledge Base (init, add, stats)
-- ✅ TTS (voices, synthesis, settings)
-- ✅ Answer Verification (grounding, abstention)
-- ✅ Conflict Detection (date extraction)
-- ✅ Prompt Templates (9 templates)
-- ✅ RAG (enhanced features)
+- Chunking (fixed, sentence, recursive)
+- Embedding (local SBERT/E5, similarity)
+- VectorDB (init, add, search, stats)
+- Document Processor (68 formats)
+- Knowledge Base (init, add, stats)
+- TTS (voices, synthesis, settings)
+- Answer Verification (grounding, abstention)
+- Conflict Detection (date extraction)
+- Prompt Templates (9 templates)
+- RAG (enhanced features)
 
 **Integration Tests (12):**
-- ✅ Chunking → Embedding pipeline
-- ✅ Embedding → VectorDB pipeline
-- ✅ Full retrieval pipeline
-- ✅ Document → KB pipeline
-- ✅ Anti-hallucination pipeline
-- ✅ TTS integration
-- ✅ Prompt integration
+- Chunking → Embedding pipeline
+- Embedding → VectorDB pipeline
+- Full retrieval pipeline
+- Document → KB pipeline
+- Anti-hallucination pipeline
+- TTS integration
+- Prompt integration
 
 **E2E Tests (9):**
-- ✅ Document to Answer flow
-- ✅ Knowledge Base workflow
-- ✅ Anti-hallucination workflow
-- ✅ TTS output workflow
-- ✅ Multi-format workflow
-- ✅ System health check
+- Document to Answer flow
+- Knowledge Base workflow
+- Anti-hallucination workflow
+- TTS output workflow
+- Multi-format workflow
+- System health check
 
 ## Troubleshooting
 
 | Lỗi | Giải pháp |
 |-----|-----------|
-| `Ollama connection refused` | App tự động start Ollama. Nếu không được: cài Ollama từ https://ollama.com/download rồi chạy `ollama pull llama3.2` |
+| `Ollama connection refused` | App tự động start Ollama. Nếu không được: cài Ollama từ https://ollama.com/download rồi chạy `ollama pull qwen2.5:7b` |
 | `API_KEY chưa được cấu hình` | Thêm key vào `.env` hoặc dùng local models (recommended) |
 | `CUDA out of memory` | Đổi `WHISPER_MODEL=tiny` trong `.env` |
 | `UnicodeEncodeError` | Chạy `chcp 65001` trước khi chạy script |
@@ -702,21 +813,23 @@ tests/
 | `I/O operation on closed file` | Streamlit bug - đã được fix trong app.py |
 | `torch.classes warning` | Warning vô hại, đã được suppress |
 | `OCR không chính xác` | Dùng PDF digital thay vì scan, hoặc ảnh chất lượng cao |
+| `PaddleOCR crash on large image` | Đặt `OCR_MAX_IMAGE_SIZE=3500` trong `.env` |
 
 ## Tech Stack
 
-- **ASR**: OpenAI Whisper (Audio/Video transcription)
-- **Document Processing**: PyMuPDF, python-docx, EasyOCR, pdfplumber, openpyxl, python-pptx
+- **ASR**: Faster-Whisper (4x faster than OpenAI Whisper) + VAD
+- **Document Processing**: PyMuPDF, python-docx, PaddleOCR, pdfplumber, openpyxl, python-pptx
 - **Video Processing**: FFmpeg (audio extraction), moviepy (fallback)
 - **Embedding**: Sentence-BERT, E5, OpenAI, Google
 - **Vector DB**: Qdrant + BM25 Hybrid
 - **LLM**: Ollama, OpenAI GPT, Google Gemini
 - **Reranking**: Cross-Encoder (sentence-transformers)
 - **Anti-Hallucination**: Answer Verification, Conflict Detection, Safe Abstention
+- **Post-Processing**: Vietnamese text correction with caching
 - **TTS**: edge-tts (Vietnamese + English voices)
 - **Optimization**: Query Expansion, Context Compression, Caching, Prompt Templates
 - **Evaluation**: MRR, NDCG, Precision, Recall, F1, BLEU
-- **Web UI**: Streamlit
+- **Web UI**: Streamlit (Student Portal + Admin Portal)
 - **Testing**: pytest, comprehensive test suite (64 tests)
 
 ## License

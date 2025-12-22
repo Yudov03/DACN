@@ -76,9 +76,13 @@ class DocumentInfo:
     category: Optional[str] = None
 
     # Timestamps
-    uploaded_at: str = ""
+    uploaded_at: str = ""  # When uploaded to system
     processed_at: Optional[str] = None
     updated_at: Optional[str] = None
+    # TODO: Add document_date field (Chapter 4 design)
+    # document_date: ngày ban hành tài liệu gốc (khác với uploaded_at)
+    # Quan trọng cho PREFER_NEWER conflict resolution strategy
+    # VD: Quy định 2020 upload 2025 -> document_date="2020-01-01"
 
     # Status: pending, processing, indexed, error
     status: str = "pending"

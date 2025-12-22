@@ -16,8 +16,17 @@ import time
 import requests
 import warnings
 import logging
+import tempfile
 from pathlib import Path
 from dotenv import load_dotenv
+
+# Voice input
+try:
+    from audio_recorder_streamlit import audio_recorder
+    VOICE_INPUT_AVAILABLE = True
+except ImportError:
+    VOICE_INPUT_AVAILABLE = False
+    print("Warning: audio-recorder-streamlit not installed. Voice input disabled.")
 
 # Suppress PyTorch internal warnings
 warnings.filterwarnings("ignore", message=".*torch.classes.*")
@@ -156,6 +165,39 @@ st.markdown("""
         gap: 2rem;
     }
 
+    /* Voice input hint */
+    .voice-hint {
+        text-align: center;
+        color: #666;
+        font-size: 0.85rem;
+        margin-top: 0.5rem;
+        padding: 0.5rem;
+        background: #f0f7ff;
+        border-radius: 5px;
+    }
+
+    /* Voice transcript display */
+    .voice-transcript {
+        background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+        padding: 0.75rem 1rem;
+        border-radius: 8px;
+        margin: 0.5rem 0;
+        border-left: 4px solid #4caf50;
+    }
+
+    /* Mobile optimization */
+    @media (max-width: 768px) {
+        .main-header h1 {
+            font-size: 1.4rem;
+        }
+        .main-header p {
+            font-size: 0.9rem;
+        }
+        [data-testid="column"] {
+            padding: 0.25rem !important;
+        }
+    }
+
     /* Hide unnecessary elements */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
@@ -181,6 +223,15 @@ if "vector_db" not in st.session_state:
 
 if "tts" not in st.session_state:
     st.session_state.tts = None
+
+if "asr" not in st.session_state:
+    st.session_state.asr = None
+
+if "voice_query" not in st.session_state:
+    st.session_state.voice_query = None
+
+if "auto_tts" not in st.session_state:
+    st.session_state.auto_tts = True  # Auto-play TTS for voice queries by default
 
 
 # =============================================================================
@@ -254,6 +305,51 @@ def init_tts():
         except:
             pass
     return st.session_state.tts
+
+
+@st.cache_resource
+def init_asr():
+    """Initialize ASR (WhisperASR) for voice input"""
+    try:
+        from src.modules import WhisperASR
+        return WhisperASR()
+    except Exception as e:
+        print(f"Lỗi khởi tạo ASR: {e}")
+        return None
+
+
+def process_voice_input(audio_bytes):
+    """Process recorded audio and convert to text using WhisperASR"""
+    if not audio_bytes:
+        return None
+
+    asr = init_asr()
+    if not asr:
+        st.error("Không thể khởi tạo ASR. Vui lòng kiểm tra cài đặt.")
+        return None
+
+    # Save audio to temp file
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
+        f.write(audio_bytes)
+        temp_path = f.name
+
+    try:
+        # Transcribe using WhisperASR (method is transcribe_audio, not transcribe)
+        result = asr.transcribe_audio(temp_path, verbose=False)
+
+        if result and result.get("full_text"):
+            return result["full_text"].strip()
+        else:
+            return None
+    except Exception as e:
+        st.error(f"Lỗi nhận dạng giọng nói: {e}")
+        return None
+    finally:
+        # Cleanup temp file
+        try:
+            os.unlink(temp_path)
+        except:
+            pass
 
 
 # =============================================================================
@@ -355,11 +451,15 @@ def main():
                 st.markdown(msg["content"])
 
                 # Show sources
+                # TODO: Implement timestamp display for audio/video sources (Chapter 4 design)
+                # - Display start_time_formatted and end_time_formatted from source metadata
+                # - Consider adding Source Player component for audio/video playback at specific timestamp
                 if msg.get("sources"):
                     with st.expander("📚 Nguồn tham khảo", expanded=False):
                         for src in msg["sources"]:
                             similarity = src.get("similarity", 0)
                             text_preview = src.get("text", "")[:150]
+                            # TODO: Add timestamp info: src.get("start_time_formatted"), src.get("end_time_formatted")
                             st.markdown(f"- **[{similarity:.0%}]** {text_preview}...")
 
                 # TTS - simple: click button -> show audio directly
@@ -374,35 +474,106 @@ def main():
                             except Exception as e:
                                 st.error(f"Lỗi TTS: {e}")
 
-    # Input
-    if prompt := st.chat_input("Nhập câu hỏi của bạn (VD: Quy định đăng ký môn học?)"):
+    # ==========================================================================
+    # Input Section (Text + Voice)
+    # ==========================================================================
+
+    query = None
+    query_source = None  # "text" or "voice"
+
+    # Voice input section
+    if VOICE_INPUT_AVAILABLE:
+        # Voice hint
+        st.markdown(
+            '<div class="voice-hint">💡 <b>Mẹo:</b> Nhấn 🎤 và nói tiếng Việt rõ ràng. Dừng 2 giây để tự động gửi.</div>',
+            unsafe_allow_html=True
+        )
+
+        col_input, col_voice = st.columns([9, 1])
+
+        with col_voice:
+            audio_bytes = audio_recorder(
+                text="",
+                recording_color="#e74c3c",
+                neutral_color="#1E88E5",
+                icon_size="2x",
+                pause_threshold=2.0,  # Auto-stop after 2s silence
+            )
+
+        # Process voice if recorded
+        if audio_bytes:
+            with st.spinner("🎤 Đang nhận dạng giọng nói..."):
+                voice_text = process_voice_input(audio_bytes)
+
+            if voice_text:
+                st.markdown(
+                    f'<div class="voice-transcript">🎤 <b>Bạn nói:</b> {voice_text}</div>',
+                    unsafe_allow_html=True
+                )
+                query = voice_text
+                query_source = "voice"
+            else:
+                st.warning("❌ Không nhận dạng được. Vui lòng nói rõ ràng hơn và thử lại.")
+
+        with col_input:
+            text_input = st.chat_input("Nhập câu hỏi hoặc nhấn 🎤 để nói...")
+    else:
+        # Fallback: text only if audio_recorder not available
+        text_input = st.chat_input("Nhập câu hỏi của bạn (VD: Quy định đăng ký môn học?)")
+
+    # Text input (if no voice query)
+    if text_input and not query:
+        query = text_input
+        query_source = "text"
+
+    # Process query (from either source)
+    if query:
         # Add user message
         st.session_state.messages.append({
             "role": "user",
-            "content": prompt
+            "content": query
         })
 
         with st.chat_message("user", avatar="👤"):
-            st.markdown(prompt)
+            if query_source == "voice":
+                st.markdown(f"🎤 {query}")
+            else:
+                st.markdown(query)
 
         # Search and get answer
         with st.chat_message("assistant", avatar="🎓"):
             with st.spinner("Đang tìm kiếm..."):
                 # Search
-                results = semantic_search(prompt, top_k=5)
+                results = semantic_search(query, top_k=5)
 
                 # Get answer
-                answer = get_answer(prompt, results)
+                answer = get_answer(query, results)
 
                 st.markdown(answer)
 
                 # Show sources
+                # TODO: Implement timestamp display for audio/video sources (Chapter 4 design)
                 if results:
                     with st.expander("📚 Nguồn tham khảo", expanded=False):
                         for src in results[:3]:
                             similarity = src.get("similarity", 0)
                             text_preview = src.get("text", "")[:150]
+                            # TODO: Add timestamp info for audio/video sources
                             st.markdown(f"- **[{similarity:.0%}]** {text_preview}...")
+
+                # Auto-play TTS for voice queries (if enabled)
+                if query_source == "voice" and st.session_state.auto_tts:
+                    tts = init_tts()
+                    if tts:
+                        with st.spinner("🔊 Đang tạo audio..."):
+                            try:
+                                # Limit answer length for TTS
+                                tts_text = answer[:800] if len(answer) > 800 else answer
+                                audio_data = tts.synthesize_sync(tts_text)
+                                if audio_data:
+                                    st.audio(audio_data, format="audio/mp3", autoplay=True)
+                            except Exception as e:
+                                st.caption(f"⚠️ Không thể phát audio: {e}")
 
         # Save to history
         st.session_state.messages.append({
@@ -411,8 +582,19 @@ def main():
             "sources": results[:3] if results else []
         })
 
-    # Sidebar - Example questions
+    # Sidebar
     with st.sidebar:
+        # Voice settings
+        if VOICE_INPUT_AVAILABLE:
+            st.markdown("### 🎤 Cài đặt giọng nói")
+            st.session_state.auto_tts = st.toggle(
+                "🔊 Tự động đọc câu trả lời",
+                value=st.session_state.auto_tts,
+                help="Tự động phát audio khi hỏi bằng giọng nói"
+            )
+            st.divider()
+
+        # Example questions
         st.markdown("### 💡 Câu hỏi mẫu")
 
         example_questions = [

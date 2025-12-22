@@ -584,7 +584,7 @@ class OllamaProcessor:
                     "stream": False,
                     "keep_alive": "30m",  # Keep model loaded for 30 minutes
                     "options": {
-                        "temperature": 0.1,
+                        "temperature": 0,  # Deterministic output for spelling correction
                         "num_predict": num_predict,
                         "num_ctx": num_ctx,
                     }

@@ -121,8 +121,13 @@ python scripts/reindex_documents.py
 ### User - Tra cứu
 
 ```bash
-# Web UI cho sinh viên (auto-start Ollama)
+# Student Portal - Web UI cho sinh viên (auto-start Ollama)
 streamlit run app.py
+# http://localhost:8501
+
+# Admin Portal - Web UI cho quản trị viên
+streamlit run app_admin.py --server.port 8502
+# http://localhost:8502
 
 # CLI interactive mode
 python main.py --mode interactive

@@ -1,0 +1,306 @@
+\section{Công nghệ sử dụng}
+\label{chap:congnghe}
+
+\begin{indentParagraph}
+Chương này trình bày các công nghệ, framework và thư viện được lựa chọn để xây dựng hệ thống. Việc lựa chọn dựa trên các tiêu chí: hiệu năng, hỗ trợ tiếng Việt, mã nguồn mở, và khả năng triển khai cục bộ.
+\end{indentParagraph}
+
+% \subsection{Ngôn ngữ lập trình}
+
+% Python 3.10+ được chọn làm ngôn ngữ chính cho toàn bộ hệ thống dựa trên nhiều yếu tố quan trọng. Hệ sinh thái AI/ML của Python là phong phú nhất trong các ngôn ngữ lập trình hiện nay, với các thư viện như PyTorch, TensorFlow, Hugging Face Transformers đã trở thành tiêu chuẩn trong ngành. Điều này đồng nghĩa với việc hầu hết các mô hình state-of-the-art đều được phát hành dưới dạng thư viện Python trước tiên.
+
+% Trong lĩnh vực xử lý ngôn ngữ tự nhiên (NLP), Python cung cấp các thư viện chuyên dụng như NLTK, spaCy và underthesea cho tiếng Việt. Các mô hình pre-trained từ Hugging Face có thể được tích hợp chỉ với vài dòng code. Cộng đồng Python đông đảo cũng đảm bảo tài liệu phong phú và hỗ trợ nhanh chóng khi gặp vấn đề.
+
+% So với các lựa chọn khác như Java hay C++, Python có ưu thế về tốc độ phát triển và tính đọc hiểu của code. Mặc dù Python chậm hơn các ngôn ngữ compiled, nhưng các tác vụ nặng về tính toán trong hệ thống đều được thực hiện bởi các thư viện viết bằng C/C++ và CUDA, do đó hiệu năng thực tế vẫn đảm bảo yêu cầu.
+
+\subsection{Nhận dạng giọng nói (ASR)}
+
+Việc lựa chọn engine ASR cần cân nhắc kỹ lưỡng các yếu tố: chất lượng nhận dạng tiếng Việt, tốc độ xử lý trên GPU thương mại, khả năng cung cấp timestamp chính xác, và đặc biệt là khả năng chạy hoàn toàn offline.
+
+\textbf{Phân tích các phương án:} Các dịch vụ cloud như Google Speech-to-Text hay Amazon Transcribe đạt WER (Word Error Rate) thấp nhất, nhưng yêu cầu chi phí vận hành liên tục. Mô hình wav2vec 2.0 của Meta yêu cầu fine-tune riêng cho tiếng Việt và thiếu khả năng sinh timestamp ở mức từ. OpenAI Whisper nguyên bản tuy đạt chất lượng cao nhưng tốc độ chậm (RTF $\approx$ 1.0) khiến không phù hợp cho ứng dụng thực tế trên phần cứng hạn chế.
+
+\textbf{Faster-Whisper} \cite{faster_whisper} được lựa chọn như giải pháp cân bằng tối ưu. Thông qua việc sử dụng engine CTranslate2 và kỹ thuật quantization (INT8/FP16), Faster-Whisper không chỉ đạt tốc độ xử lý nhanh gấp 4 lần so với implementation gốc mà còn giảm đáng kể footprint bộ nhớ VRAM - từ 10GB xuống còn 4GB cho mô hình large-v3. Điều này cho phép hệ thống vận hành ổn định trên các GPU thương mại cấp thấp như RTX 3060 (12GB VRAM). So với Distil-Whisper (phiên bản distilled nhẹ hơn), Faster-Whisper giữ nguyên kiến trúc gốc nên đảm bảo chất lượng nhận dạng không suy giảm, đặc biệt quan trọng với tiếng Việt có dấu thanh phức tạp.
+
+\begin{table}[H]
+    \centering
+    \caption{So sánh các engine ASR}
+    \label{tab:asr_comparison}
+    \begin{tabular}{|l|c|c|c|c|}
+        \hline
+        \textbf{Engine} & \textbf{WER (\%)} & \textbf{RTF} & \textbf{Offline} & \textbf{Chi phí} \\
+        \hline
+        Google Speech-to-Text & 5-8 & 0.3 & Không & \$0.006/15s \\
+        Amazon Transcribe & 6-10 & 0.4 & Không & \$0.024/phút \\
+        Azure Speech & 5-9 & 0.3 & Không & \$1/giờ \\
+        OpenAI Whisper (large) & 8-12 & 1.0 & Có & Miễn phí \\
+        Faster-Whisper (large) & 8-12 & \textbf{0.25} & Có & Miễn phí \\
+        wav2vec 2.0 (fine-tuned) & 10-15 & 0.5 & Có & Miễn phí \\
+        \hline
+    \end{tabular}
+
+    \footnotesize{WER = Word Error Rate (đo trên tiếng Việt). RTF = Real-Time Factor (thấp hơn là nhanh hơn).}
+\end{table}
+
+\textbf{Silero VAD} \cite{silero_vad} được tích hợp để tiền xử lý audio trước khi đưa vào Whisper. Voice Activity Detection giúp phát hiện các đoạn chứa giọng nói trong audio, loại bỏ các khoảng im lặng không cần thiết. Điều này không chỉ giảm thời gian xử lý mà còn cải thiện chất lượng transcript bằng cách loại bỏ các đoạn nhiễu. Silero VAD được chọn vì kích thước nhỏ gọn chỉ vài megabyte nhưng độ chính xác cao, đồng thời hỗ trợ nhiều tần số lấy mẫu phổ biến.
+
+\subsection{Mô hình ngôn ngữ lớn (LLM)}
+
+Việc lựa chọn LLM cần ưu tiên khả năng triển khai cục bộ trong khi vẫn đảm bảo chất lượng xử lý tiếng Việt. Hệ thống được thiết kế theo kiến trúc multi-provider, cho phép linh hoạt chuyển đổi giữa các giải pháp tùy theo yêu cầu cụ thể.
+
+\textbf{Phân tích nền tảng chạy LLM cục bộ:} llama.cpp là thư viện C++ nền tảng cho việc chạy LLM trên CPU/GPU, tuy nhiên đòi hỏi setup phức tạp và không cung cấp API tiêu chuẩn. vLLM tối ưu cho production với throughput cao nhưng yêu cầu GPU mạnh và cấu hình phức tạp. LM Studio cung cấp GUI trực quan nhưng thiếu khả năng tích hợp headless. Text Generation WebUI đa năng nhưng cài đặt phức tạp với nhiều dependencies.
+
+\textbf{Ollama} \cite{ollama} được chọn làm nền tảng chính nhờ cân bằng tối ưu giữa tính đơn giản và khả năng tích hợp. Quy trình cài đặt chỉ cần một lệnh, và quan trọng hơn, Ollama cung cấp API tương thích OpenAI cho phép hệ thống dễ dàng chuyển đổi giữa local và cloud mà không cần thay đổi code. Ollama tự động phát hiện GPU NVIDIA và sử dụng quantization (4-bit/8-bit) để tối ưu VRAM.
+
+\begin{table}[H]
+    \centering
+    \caption{So sánh các nền tảng chạy LLM cục bộ}
+    \label{tab:llm_runtime}
+    \begin{tabular}{|l|c|c|c|c|}
+        \hline
+        \textbf{Nền tảng} & \textbf{OpenAI API} & \textbf{GUI} & \textbf{Cài đặt} & \textbf{Định dạng model} \\
+        \hline
+        Ollama & Có & Không & Đơn giản & GGUF \\
+        LM Studio & Có & Có & Đơn giản & GGUF \\
+        llama.cpp & Không & Không & Phức tạp & GGUF \\
+        vLLM & Có & Không & Trung bình & HF, AWQ \\
+        Text Generation WebUI & Có & Có & Phức tạp & Đa dạng \\
+        \hline
+    \end{tabular}
+\end{table}
+
+% Bảng \ref{tab:llm_runtime} so sánh các nền tảng chạy LLM cục bộ phổ biến. Ollama được chọn vì cân bằng tốt giữa tính đơn giản và khả năng tích hợp thông qua OpenAI-compatible API. LM Studio phù hợp hơn cho người dùng cần giao diện đồ họa, trong khi vLLM tối ưu cho production với throughput cao.
+
+Mô hình LLM được khuyến nghị cho hệ thống là Qwen2.5 phiên bản 7B tham số. Qwen2.5 được phát triển bởi Alibaba Cloud với khả năng xử lý tốt các ngôn ngữ châu Á, bao gồm tiếng Việt. Trong các thử nghiệm thực tế, Qwen2.5:7b cho kết quả tốt hơn LLaMA 3.2 cùng kích thước khi xử lý các câu hỏi bằng tiếng Việt. Phiên bản 7B cân bằng tốt giữa chất lượng và yêu cầu phần cứng, có thể chạy trên GPU với 8GB VRAM.
+
+\begin{table}[H]
+    \centering
+    \caption{Các mô hình LLM hỗ trợ tiếng Việt tốt}
+    \label{tab:vietnamese_llm}
+    \begin{tabular}{|l|c|c|c|p{4cm}|}
+        \hline
+        \textbf{Model} & \textbf{Params} & \textbf{VRAM} & \textbf{Context} & \textbf{Ghi chú} \\
+        \hline
+        Qwen2.5 & 7B & 8GB & 128K & Khuyến nghị cho tiếng Việt \\
+        LLaMA 3.2 & 8B & 8GB & 128K & Đa năng, tiếng Việt khá \\
+        Gemma 2 & 9B & 10GB & 8K & Của Google, context ngắn \\
+        Mistral & 7B & 8GB & 32K & Nhanh, tiếng Việt trung bình \\
+        Phi-3 & 3.8B & 4GB & 128K & Nhẹ, phù hợp thiết bị yếu \\
+        \hline
+    \end{tabular}
+\end{table}
+
+% Bảng \ref{tab:vietnamese_llm} liệt kê các mô hình mã nguồn mở có thể chạy cục bộ với khả năng xử lý tiếng Việt. Qwen2.5 được đánh giá cao nhất cho tiếng Việt nhờ dữ liệu huấn luyện đa dạng từ các ngôn ngữ châu Á.
+
+\textbf{Google Gemini} \cite{gemini2024} được tích hợp như lựa chọn cloud cho các trường hợp yêu cầu chất lượng cao nhất. Gemini Pro hỗ trợ context window lên đến 1 triệu tokens, cho phép xử lý các câu hỏi phức tạp cần nhiều ngữ cảnh. Tuy nhiên, Gemini yêu cầu API key và phát sinh chi phí theo sử dụng, do đó được khuyến nghị sử dụng khi cần chất lượng cao hơn so với LLM cục bộ.
+
+\subsection{Cơ sở dữ liệu Vector}
+
+Với yêu cầu về Hybrid Search và khả năng lọc theo metadata, việc lựa chọn vector database cần xem xét kỹ các yếu tố: hỗ trợ filtering mạnh mẽ, khả năng triển khai on-premise, và độ phức tạp vận hành.
+
+\textbf{Phân tích các phương án:} FAISS của Meta là thư viện nhanh nhất cho similarity search, tuy nhiên chỉ là pure library không có khả năng lưu payload hay filtering - phải tự implement thêm. ChromaDB đơn giản với mode embedded, nhưng hỗ trợ filtering cơ bản và không có distributed mode cho scale lớn. Pinecone mạnh mẽ với managed service nhưng chỉ có phiên bản cloud trả phí, vi phạm ràng buộc về triển khai cục bộ. Milvus hỗ trợ đầy đủ tính năng nhưng setup phức tạp với nhiều components (etcd, MinIO, Pulsar).
+
+\textbf{Qdrant} \cite{qdrant} được chọn nhờ cân bằng tối ưu giữa tính năng và độ phức tạp. Qdrant sử dụng thuật toán HNSW (Hierarchical Navigable Small World) đạt hiệu năng gần tương đương FAISS, đồng thời cung cấp khả năng filtering theo metadata mạnh mẽ - cho phép thu hẹp phạm vi tìm kiếm dựa trên loại file, ngày tạo hay nguồn tài liệu. Việc triển khai Qdrant rất đơn giản thông qua Docker single-container, phù hợp với quy mô hệ thống hiện tại.
+
+\begin{table}[H]
+    \centering
+    \caption{So sánh các Vector Database}
+    \label{tab:vectordb_comparison}
+    \begin{tabular}{|l|c|c|c|c|c|}
+        \hline
+        \textbf{VectorDB} & \textbf{Mã nguồn mở} & \textbf{Filtering} & \textbf{Distributed} & \textbf{Triển khai} \\
+        \hline
+        Qdrant & Có & Tốt & Có & Docker/Binary \\
+        Pinecone & Không & Tốt & Có & Cloud only \\
+        Weaviate & Có & Tốt & Có & Docker/K8s \\
+        Milvus & Có & Trung bình & Có & Phức tạp \\
+        ChromaDB & Có & Cơ bản & Không & Embedded \\
+        FAISS & Có & Không & Không & Library \\
+        \hline
+    \end{tabular}
+\end{table}
+
+% Bảng \ref{tab:vectordb_comparison} tổng hợp so sánh các vector database phổ biến theo các tiêu chí quan trọng cho hệ thống.
+
+Qdrant cung cấp cả REST API và gRPC API, trong đó thư viện qdrant-client cho Python giúp việc tích hợp trở nên thuận tiện. Đối với hệ thống hiện tại với quy mô vài ngàn chunks, Qdrant single-node đáp ứng tốt yêu cầu. Khi cần scale lên, Qdrant hỗ trợ distributed mode với sharding và replication.
+
+Hệ thống tích hợp \textbf{Hybrid Search} kết hợp vector search (semantic) với BM25 \cite{robertson2009bm25} (keyword). Như đã phân tích ở Chương 2, việc kết hợp này cải thiện đáng kể chất lượng retrieval: vector search tìm được các tài liệu có ngữ nghĩa tương đồng dù không chứa chính xác từ khóa, trong khi BM25 đảm bảo các tài liệu chứa từ khóa quan trọng được xếp hạng cao.
+
+% \textit{Chi tiết implementation:} BM25 được triển khai như một module riêng biệt (class \texttt{BM25} trong \texttt{vector\_db\_module.py}) thay vì sử dụng Sparse Vector của Qdrant. Lý do: (1) Qdrant chưa hỗ trợ native BM25 trong phiên bản hiện tại, (2) module tự xây dựng cho phép tùy chỉnh tokenization cho tiếng Việt. Khi thực hiện hybrid search, hệ thống truy vấn song song Qdrant (vector) và BM25 index (in-memory), sau đó kết hợp điểm bằng weighted linear combination.
+
+\textbf{Cross-Encoder Reranking:} Sau bước hybrid search, hệ thống sử dụng Cross-Encoder \cite{nogueira2019passage} để rerank kết quả. Như đã phân tích ở Chương 2, Cross-Encoder cho độ chính xác cao hơn Bi-Encoder vì xử lý đồng thời query và document. Module \texttt{CrossEncoderReranker} sử dụng mô hình mặc định \texttt{cross-encoder/ms-marco-MiniLM-L-6-v2} hoặc \texttt{BAAI/bge-reranker-base} qua thư viện \texttt{sentence-transformers}, cho phép cải thiện đáng kể thứ tự kết quả trước khi đưa vào LLM. Chi tiết pipeline sẽ được trình bày trong Chương \ref{chap:design}.
+
+\subsection{Text Embeddings}
+
+% Module embedding chịu trách nhiệm chuyển đổi văn bản thành vector số học trong không gian nhiều chiều, là bước tiền đề cho việc tìm kiếm ngữ nghĩa. Chất lượng của mô hình embedding ảnh hưởng trực tiếp đến hiệu quả retrieval, do đó việc lựa chọn mô hình phù hợp là rất quan trọng.
+
+\textbf{Sentence-BERT} \cite{reimers2019sentence} được chọn làm mô hình embedding mặc định của hệ thống. Cụ thể, mô hình paraphrase-multilingual-mpnet-base-v2 hỗ trợ hơn 50 ngôn ngữ bao gồm tiếng Việt, với chiều vector 768. Mô hình này được huấn luyện trên dữ liệu paraphrase đa ngôn ngữ, do đó có khả năng tốt trong việc nhận diện các câu có cùng ngữ nghĩa dù được diễn đạt khác nhau. Ưu điểm lớn nhất của Sentence-BERT là hoàn toàn miễn phí và có thể chạy cục bộ thông qua thư viện \texttt{sentence-transformers}.
+
+\textbf{E5} \cite{wang2022e5} là lựa chọn thay thế khi cần chất lượng cao hơn. E5 sử dụng kỹ thuật contrastive learning với dữ liệu text pairs quy mô lớn, đạt điểm cao trên benchmark MTEB. Mô hình multilingual-e5-large với chiều vector 1024 cho kết quả tốt hơn Sentence-BERT khoảng 15\% trên các benchmark retrieval, tuy nhiên yêu cầu nhiều tài nguyên tính toán hơn.
+
+% \textit{Lưu ý về GPU:} Cả SBERT và E5 đều được chạy qua thư viện \texttt{sentence-transformers} với CUDA backend. Như đã nêu trong yêu cầu phi chức năng (Bảng 1.4), thời gian phản hồi mong muốn là dưới 5 giây. Với GPU (RTX 3060), việc embedding một query mất khoảng 10-50ms, trong khi CPU mất 200-500ms. Do đó, GPU là bắt buộc để đạt hiệu năng retrieval theo yêu cầu. Module embedding tự động phát hiện và sử dụng GPU nếu có sẵn.
+
+\begin{table}[H]
+    \centering
+    \caption{Điểm MTEB Retrieval của các mô hình Embedding}
+    \label{tab:mteb_benchmark}
+    \begin{tabular}{|l|c|c|c|c|}
+        \hline
+        \textbf{Model} & \textbf{Dimension} & \textbf{MTEB Avg} & \textbf{Retrieval} & \textbf{Chi phí} \\
+        \hline
+        OpenAI text-embedding-3-large & 3072 & 64.6 & 59.2 & \$0.13/1M tokens \\
+        Cohere embed-v3 & 1024 & 64.5 & 58.5 & \$0.10/1M tokens \\
+        multilingual-e5-large & 1024 & 61.5 & 56.9 & Miễn phí \\
+        paraphrase-multilingual-mpnet & 768 & 57.8 & 49.3 & Miễn phí \\
+        all-MiniLM-L6-v2 & 384 & 56.3 & 41.9 & Miễn phí \\
+        \hline
+    \end{tabular}
+
+    \footnotesize{MTEB = Massive Text Embedding Benchmark. Điểm cao hơn là tốt hơn.}
+\end{table}
+
+% Bảng \ref{tab:mteb_benchmark} so sánh điểm MTEB của các mô hình embedding. Mặc dù OpenAI và Cohere đạt điểm cao nhất, multilingual-e5-large và paraphrase-multilingual-mpnet là lựa chọn tối ưu cho hệ thống nhờ miễn phí và chạy cục bộ.
+
+Hệ thống cũng tích hợp sẵn các provider embedding từ cloud như Google và OpenAI cho các trường hợp cần chất lượng cao nhất. OpenAI text-embedding-3-large hiện đang dẫn đầu trên nhiều benchmark, tuy nhiên có chi phí theo sử dụng. Kiến trúc multi-provider cho phép người dùng linh hoạt lựa chọn mô hình phù hợp với yêu cầu về chất lượng, chi phí và bảo mật.
+
+\subsection{Xử lý tài liệu}
+
+Hệ thống cần xử lý đa dạng định dạng tài liệu từ các nguồn khác nhau trong môi trường giáo dục. Điều này đòi hỏi một bộ công cụ xử lý linh hoạt có khả năng trích xuất văn bản từ nhiều loại file khác nhau, bao gồm cả các tài liệu scan cần OCR.
+
+\textbf{PaddleOCR} \cite{paddleocr} được chọn làm engine OCR chính nhờ khả năng nhận dạng tiếng Việt xuất sắc. PaddleOCR được phát triển bởi Baidu với kiến trúc PP-OCR nhẹ và nhanh, hỗ trợ hơn 80 ngôn ngữ. Điểm mạnh của PaddleOCR so với các alternatives như Tesseract hay EasyOCR là độ chính xác cao với văn bản tiếng Việt có dấu, đồng thời tốc độ xử lý nhanh hơn đáng kể. PaddleOCR sử dụng DB (Differentiable Binarization) cho text detection và CRNN kết hợp CTC cho text recognition.
+
+\begin{table}[H]
+    \centering
+    \caption{So sánh các engine OCR cho tiếng Việt}
+    \label{tab:ocr_comparison}
+    \begin{tabular}{|l|c|c|c|c|}
+        \hline
+        \textbf{Engine} & \textbf{Độ chính xác} & \textbf{Tốc độ} & \textbf{GPU} & \textbf{Kích thước} \\
+        \hline
+        PaddleOCR & Cao & Nhanh & Có & ~150MB \\
+        Tesseract 5 & Trung bình & Chậm & Không & ~40MB \\
+        EasyOCR & Cao & Trung bình & Có & ~200MB \\
+        Google Vision API & Rất cao & Nhanh & Cloud & Cloud \\
+        \hline
+    \end{tabular}
+\end{table}
+
+% Bảng \ref{tab:ocr_comparison} so sánh các engine OCR phổ biến. PaddleOCR cân bằng tốt giữa độ chính xác, tốc độ và khả năng chạy offline. Tesseract tuy nhẹ nhưng độ chính xác thấp hơn với tiếng Việt có dấu. Google Vision API đạt chất lượng cao nhất nhưng yêu cầu kết nối internet và có chi phí.
+
+\textbf{PyMuPDF} \cite{pymupdf} được sử dụng để xử lý file PDF theo phương pháp hybrid. Đầu tiên, PyMuPDF cố gắng trích xuất text trực tiếp từ PDF, đây là phương pháp nhanh và chính xác với PDF text-based. Nếu phát hiện PDF là dạng scan, hệ thống sẽ render từng page thành ảnh và đưa qua PaddleOCR. Phương pháp hybrid này nhanh gấp 10 lần so với việc OCR toàn bộ các page.
+
+Đối với các định dạng Office, hệ thống sử dụng python-docx cho Word, openpyxl cho Excel, và python-pptx cho PowerPoint. Các thư viện này cho phép trích xuất text, bảng biểu và các thành phần cấu trúc khác một cách đáng tin cậy.
+
+\begin{table}[H]
+    \centering
+    \caption{Công nghệ xử lý tài liệu}
+    \label{tab:doc_processing}
+    \begin{tabular}{|l|l|l|}
+        \hline
+        \textbf{Loại} & \textbf{Công nghệ} & \textbf{Đặc điểm} \\
+        \hline
+        OCR & PaddleOCR \cite{paddleocr} & Hỗ trợ tiếng Việt xuất sắc \\
+        PDF & PyMuPDF \cite{pymupdf} & Hybrid text + OCR \\
+        Word & python-docx & Trích xuất text và bảng \\
+        Excel & openpyxl & Đọc spreadsheet \\
+        PowerPoint & python-pptx & Trích xuất từ slides \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\subsection{Công nghệ chống ảo giác (Anti-Hallucination)}
+
+Như đã phân tích, việc chống ảo giác là một trong những mục tiêu quan trọng của đề tài. Để hiện thực hóa hệ thống 3 tầng, nghiên cứu sử dụng các công nghệ và phương pháp sau:
+
+\textbf{LLM-based Verification:} Thay vì sử dụng các thư viện đánh giá bên ngoài như RAGAS, hệ thống tự xây dựng module xác minh sử dụng chính LLM (Ollama/Gemini) với các prompt template chuyên biệt. Phương pháp này cho phép kiểm soát hoàn toàn logic verification và tùy chỉnh cho tiếng Việt. Module \texttt{AnswerVerifier} sử dụng kỹ thuật \textbf{NLI-style prompting} để phân loại mức độ grounding (FULLY\_GROUNDED, PARTIALLY\_GROUNDED, ...).
+
+\textbf{Pydantic Schema Validation:} Thư viện Pydantic được sử dụng để ép kiểu và validate cấu trúc output từ LLM. Đảm bảo các trường bắt buộc như \texttt{grounding\_level}, \texttt{confidence\_score}, và \texttt{supporting\_evidence} luôn có mặt và đúng định dạng. Khi LLM không trả về đúng schema, hệ thống tự động retry hoặc fallback về safe abstention.
+
+\textbf{Few-shot Prompting:} Các prompt template được thiết kế theo phương pháp few-shot với các ví dụ minh họa cụ thể cho từng mức độ grounding. Điều này giúp LLM hiểu rõ tiêu chí đánh giá và tăng tính nhất quán trong kết quả verification. Prompt template \texttt{strict\_qa} được tối ưu cho tiếng Việt với các ví dụ từ ngữ cảnh giáo dục.
+
+\textbf{Date Boost và Conflict Detection:} Trong lĩnh vực giáo dục, thông tin thường xuyên được cập nhật (học phí, quy chế, lịch học). Module \texttt{ConflictDetector} sử dụng regex patterns và LLM để trích xuất metadata thời gian từ các chunks. Kỹ thuật \textbf{Date Boost} điều chỉnh điểm số retrieval dựa trên độ mới của tài liệu theo công thức:
+\begin{equation}
+    \text{score}_{final} = \text{score}_{relevance} \times (1 - w) + \text{score}_{date} \times w
+\end{equation}
+trong đó $w$ là trọng số date boost (mặc định 0.2), và $\text{score}_{date}$ được tính dựa trên khoảng cách thời gian so với hiện tại. Điều này đảm bảo tài liệu mới hơn được ưu tiên khi có xung đột thông tin. Hệ thống hỗ trợ nhiều chiến lược resolution: \texttt{PREFER\_NEWER} (mặc định), \texttt{PREFER\_HIGHER\_SCORE}, \texttt{SHOW\_ALL\_VERSIONS}.
+
+\subsection{Giao diện, Voice Input và TTS}
+
+\textbf{Streamlit} \cite{streamlit} được chọn để xây dựng giao diện web vì Python native, phát triển nhanh, và hỗ trợ nhiều loại widget.
+
+\textbf{Audio-Recorder-Streamlit} được sử dụng để thu âm giọng nói của người dùng trực tiếp từ browser. Thư viện này cung cấp component React tích hợp vào Streamlit, cho phép ghi âm qua microphone và trả về audio bytes để xử lý. Kết hợp với Faster-Whisper ASR, hệ thống có thể chuyển đổi câu hỏi bằng giọng nói thành văn bản để truy vấn.
+
+\textbf{Edge-TTS} \cite{edge_tts} được sử dụng để chuyển văn bản thành giọng nói với các giọng đọc tiếng Việt chất lượng cao.
+
+% \subsection{Hạ tầng triển khai thực nghiệm}
+
+% Việc lựa chọn công nghệ phần mềm trong các phần trên đều gắn liền với ràng buộc phần cứng thực tế. Hệ thống được phát triển và thử nghiệm trên cấu hình máy tính cá nhân đại diện cho phân khúc GPU thương mại tầm trung:
+
+% \begin{itemize}
+%     \item \textbf{GPU:} NVIDIA GeForce RTX 3060 (12GB VRAM, CUDA 8.6)
+%     \item \textbf{CPU:} Intel Core i5-12400F (6 cores, 12 threads)
+%     \item \textbf{RAM:} 32GB DDR4
+%     \item \textbf{Storage:} NVMe SSD 512GB
+% \end{itemize}
+
+% \textbf{Chiến lược Quantization:} Với giới hạn 12GB VRAM, việc sử dụng quantization là bắt buộc để chạy đồng thời nhiều mô hình. Bảng dưới đây tóm tắt cấu hình quantization cho từng thành phần:
+
+% \begin{table}[H]
+%     \centering
+%     \caption{Cấu hình Quantization theo thành phần}
+%     \label{tab:quantization_config}
+%     \begin{tabular}{|l|c|c|c|}
+%         \hline
+%         \textbf{Thành phần} & \textbf{Precision} & \textbf{VRAM} & \textbf{Trade-off} \\
+%         \hline
+%         Faster-Whisper (large-v3) & FP16 & 4GB & Giữ nguyên chất lượng \\
+%         Qwen2.5:7b (Ollama) & Q4\_K\_M & 5GB & Giảm 1-2\% quality \\
+%         SBERT Embedding & FP32 & 1GB & Không quantize \\
+%         PaddleOCR & FP16 & 0.5GB & Tự động \\
+%         \hline
+%         \textbf{Tổng (concurrent)} & - & \textbf{~10GB} & Fit trong 12GB \\
+%         \hline
+%     \end{tabular}
+% \end{table}
+
+% Ollama sử dụng định dạng GGUF với quantization Q4\_K\_M (4-bit mixed precision), cho phép giảm VRAM từ 14GB (FP16) xuống còn 5GB cho mô hình Qwen2.5:7b. Theo benchmarks từ llama.cpp, Q4\_K\_M chỉ giảm khoảng 1-2\% perplexity so với FP16, đây là trade-off chấp nhận được cho việc chạy trên phần cứng hạn chế.
+
+% Faster-Whisper sử dụng compute\_type=``float16'' thay vì ``int8'' vì với 12GB VRAM, FP16 vẫn khả thi và đảm bảo chất lượng ASR tối ưu cho tiếng Việt có nhiều dấu thanh.
+
+% \begin{figure}[H]
+%     \centering
+%     \includegraphics[width=0.85\textwidth]{report/figures/tech_stack_layers.png}
+%     \caption{Sơ đồ phân tầng công nghệ (Tech Stack)}
+%     \label{fig:tech_stack_layers}
+% \end{figure}
+
+\subsection*{Tổng kết công nghệ}
+
+\begin{table}[H]
+    \centering
+    \caption{Tổng hợp công nghệ sử dụng}
+    \label{tab:tech_summary}
+    \begin{tabular}{|l|l|l|l|}
+        \hline
+        \textbf{Thành phần} & \textbf{Công nghệ} & \textbf{Phiên bản} & \textbf{Lý do chọn} \\
+        \hline
+        Ngôn ngữ & Python & 3.10+ & Hệ sinh thái AI/ML phong phú \\
+        ASR & Faster-Whisper & 1.0.3 & Nhanh 4x, word timestamps \\
+        LLM Runtime & Ollama & 0.3+ & API OpenAI-compatible \\
+        LLM Model & Qwen2.5 & 7B-Q4 & Tiếng Việt tốt, 5GB VRAM \\
+        Vector DB & Qdrant & 1.9+ & HNSW, hybrid search \\
+        Embeddings & SBERT & mpnet-v2 & Đa ngôn ngữ, miễn phí \\
+        OCR & PaddleOCR & 2.7+ & Tiếng Việt xuất sắc \\
+        Anti-Halluc & Pydantic + LLM & 2.0+ & Schema validation \\
+        UI & Streamlit & 1.35+ & Python native \\
+        TTS & Edge-TTS & 6.1+ & Chất lượng cao (online) \\
+        \hline
+    \end{tabular}
+\end{table}
+
+Tất cả công nghệ được lựa chọn đều đáp ứng bốn tiêu chí quan trọng đã đặt ra từ đầu: mã nguồn mở hoặc miễn phí, hỗ trợ tiếng Việt tốt, có khả năng chạy hoàn toàn cục bộ mà không phụ thuộc vào dịch vụ cloud trả phí, và đạt hiệu năng đáp ứng yêu cầu sử dụng thực tế.
+
+Điểm đặc biệt của bộ công nghệ được lựa chọn là tính module hóa và khả năng thay thế linh hoạt. Mỗi thành phần đều có thể được thay thế bởi một alternative mà không ảnh hưởng đến các phần còn lại của hệ thống. Ví dụ, người dùng có thể chuyển từ Ollama sang Google Gemini chỉ bằng việc thay đổi một dòng cấu hình, hoặc chuyển từ SBERT sang E5 khi cần chất lượng embedding cao hơn.
+
+Việc lựa chọn ưu tiên các giải pháp cục bộ như Faster-Whisper, Ollama, và SBERT đảm bảo hệ thống có thể vận hành với chi phí tối thiểu, phù hợp với ngân sách của các cơ sở giáo dục. Đồng thời, việc không gửi dữ liệu ra bên ngoài cũng đáp ứng yêu cầu về bảo mật thông tin của nhà trường.
+
+\newpage

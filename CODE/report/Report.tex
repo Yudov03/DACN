@@ -1,0 +1,309 @@
+\documentclass[a4paper,12pt,oneside]{article}
+\usepackage[utf8]{vntex}
+%\usepackage[english,vietnam]{babel}
+\usepackage{mathptmx}[ptm]
+%\usepackage[francais]{babel}
+\usepackage{a4wide,amssymb,epsfig,latexsym,array,hhline,fancyhdr}
+\usepackage[normalem]{ulem}
+%\usepackage{soul}
+\usepackage{placeins}
+\usepackage[makeroom]{cancel}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{multicol,longtable,amscd}
+\usepackage{diagbox}%Make diagonal lines in tables
+\usepackage{booktabs}
+\usepackage {tabularx}
+\usepackage{alltt}
+\usepackage{parskip}
+\usepackage[framemethod=tikz]{mdframed}% For highlighting paragraph backgrounds
+\usepackage{caption,subcaption}
+\usepackage{lastpage}
+\usepackage[lined,boxed,commentsnumbered]{algorithm2e}
+\usepackage{enumerate}
+\usepackage{color}
+\usepackage{graphicx}							% Standard graphics package
+\usepackage{array}
+\usepackage{tabularx, caption}
+\usepackage{multirow}
+\usepackage{multicol}
+\usepackage{rotating}
+\usepackage{graphics}
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{epsfig}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric}
+\usepackage{natbib} % Bibliography package
+\usepackage{float}
+\usepackage{xltabular, caption}
+\usepackage{longtable}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+% Code listings
+\usepackage{listings}
+\usepackage{endnotes} % Tải gói endnotes
+% Landscape pages
+\usepackage{pdflscape}
+
+% Review package - comment out khi hoàn thành review
+\usepackage{easyReview}
+% Các lệnh easyReview:
+%   \add{text}           - Thêm text mới (màu xanh lá)
+%   \remove{text}        - Đánh dấu xóa (màu đỏ, gạch ngang)
+%   \replace{old}{new}   - Thay thế text
+%   \comment{text}       - Thêm comment (màu vàng)
+%   \highlight{text}     - Highlight text (màu vàng)
+%   \alert{text}         - Alert quan trọng (màu đỏ)
+% Để ẩn tất cả review marks, thêm option: \usepackage[final]{easyReview}
+
+\setlength{\parskip}{0.5em}
+
+% Section title formatting
+\usepackage{titlesec}
+
+% Adjusting page layout
+\usepackage{changepage}
+
+\definecolor{delim}{RGB}{20,105,176}
+\definecolor{numb}{RGB}{106, 109, 32}
+\definecolor{string}{rgb}{0.64,0.08,0.08}
+\lstdefinelanguage{json}{
+    numbers=left,
+    numberstyle=\small,
+    frame=single,
+    rulecolor=\color{black},
+    showspaces=false,
+    showtabs=false,
+    breaklines=true,
+    postbreak=\raisebox{0ex}[0ex][0ex]{\ensuremath{\color{gray}\hookrightarrow\space}},
+    breakatwhitespace=true,
+    basicstyle=\ttfamily\small,
+    upquote=true,
+    morestring=[b]",
+    stringstyle=\color{string},
+    literate=
+     *{0}{{{\color{numb}0}}}{1}
+      {1}{{{\color{numb}1}}}{1}
+      {2}{{{\color{numb}2}}}{1}
+      {3}{{{\color{numb}3}}}{1}
+      {4}{{{\color{numb}4}}}{1}
+      {5}{{{\color{numb}5}}}{1}
+      {6}{{{\color{numb}6}}}{1}
+      {7}{{{\color{numb}7}}}{1}
+      {8}{{{\color{numb}8}}}{1}
+      {9}{{{\color{numb}9}}}{1}
+      {\{}{{{\color{delim}{\{}}}}{1}
+      {\}}{{{\color{delim}{\}}}}}{1}
+      {[}{{{\color{delim}{[}}}}{1}
+      {]}{{{\color{delim}{]}}}}{1},
+}
+\newcommand{\svdots}{\raisebox{3pt}{$\scalebox{.75}{\vdots}$}} % <- Works
+\newcommand{\sddots}{\raisebox{3pt}{$\scalebox{.75}{$\ddots$}$}} % <- Do not work
+\newcommand\setrow[1]{\gdef\rowmac{#1}#1\ignorespaces}
+
+\usetikzlibrary{arrows,decorations.pathmorphing,backgrounds,calc,positioning,fit,shapes.symbols}
+\usepackage[unicode,hypertexnames=false]{hyperref}
+\hypersetup{urlcolor=black,linkcolor=black,citecolor=black,colorlinks=true} 
+\usepackage{listings}
+
+%\usepackage{pstcol} 								% PSTricks with the standard color package
+
+\usepackage[normalem]{ulem}
+
+\newtheorem{theorem}{{\bf Định lý}}
+\newtheorem{property}{{\bf Tính chất}}
+\newtheorem{proposition}{{\bf Mệnh đề}}
+\newtheorem{corollary}[proposition]{{\bf Hệ quả}}
+\newtheorem{lemma}[proposition]{{\bf Bổ đề}}
+\theoremstyle{definition}
+\newtheorem{exer}{Bài toán}
+\addtocontents{toc}{\protect\thispagestyle{empty}}
+% Remove page number in contents page. 
+\addtocontents{lof}{\protect\thispagestyle{empty}}
+% Remove page number in list of figure page. 
+\addtocontents{lot}{\protect\thispagestyle{empty}}
+% Remove page number in list of table page. 
+\def\thesislayout{	% A4: 210 × 297
+	\geometry{
+		a4paper,
+		left=30mm,
+		top=20mm,
+		right=20mm,
+		bottom=20mm,
+	}
+}
+% \def\thesisheadlayout{	% A4: 210 × 297
+% 	\geometry{
+% 		a4paper,
+% 		total={160mm,240mm},  % fix over page
+% 		left=30mm,
+% 		top=10mm,
+% 	}
+% }
+\thesislayout
+\lstset{
+language=Python,
+basicstyle=\footnotesize\ttfamily,
+commentstyle=\ttfamily\color{gray},
+numbers=left,
+numberstyle=\ttfamily\color{black}\footnotesize,
+stepnumber=1,
+numbersep=5pt,
+backgroundcolor=\color{white},
+showspaces=false,
+showstringspaces=false,
+showtabs=false,
+frame=single,
+tabsize=2,
+captionpos=b,
+breaklines=true,
+breakatwhitespace=false,
+title=\lstname,
+escapeinside={},
+keywordstyle=\color{blue}\bfseries,
+stringstyle=\color{red}
+}
+
+%\usepackage{fancyhdr}
+\setlength{\headheight}{40pt}
+\setlength\parindent{0pt}
+\setcitestyle{numbers,square}
+\pagestyle{fancy}
+\fancyhead{} % clear all header fields
+\fancyhead[L]{\footnotesize \ttfamily
+ \begin{tabular}{rl}
+    \begin{picture}(25,15)(0,0)
+    \put(0,-8){\includegraphics[width=8mm, height=8mm]{report/hcmut.png}}
+    %\put(0,-8){\epsfig{width=10mm,figure=hcmut.eps}}
+   \end{picture}&
+	%\includegraphics[width=8mm, height=8mm]{hcmut.png} & %
+	\begin{tabular}{l}
+		\textbf{\bf \ttfamily Trường Đại học Bách khoa - ĐHQG-HCM}\\
+		\textbf{\bf \ttfamily Khoa Khoa Học và Kỹ Thuật Máy Tính}
+	\end{tabular} 	
+ \end{tabular}
+}
+\fancyhead[R]{
+	\begin{tabular}{l}
+		\tiny \bf \\
+		\tiny \bf 
+	\end{tabular}  
+ }
+\fancyfoot{} % clear all footer fields
+\fancyfoot[L]{\footnotesize \ttfamily Đồ án chuyên ngành}
+\fancyfoot[R]{\footnotesize \ttfamily Trang {\thepage}/\pageref{LastPage}}
+\renewcommand{\headrulewidth}{0.3pt}
+\renewcommand{\footrulewidth}{0.3pt}
+
+  % for the adjustwidth environment
+\newenvironment{indentParagraph}{\begin{adjustwidth}{2cm}{}}{\end{adjustwidth}}
+
+
+% ===== Section format ===== %
+\titleformat{name=\section,numberless}[block]{\normalfont\Huge\bfseries}{}{0em}{}[\vspace{0.5em}]
+
+\titleformat{\section}[display]{\normalfont\Huge\bfseries}{Chương \thesection}{0.5em}{\label{chap: \thesection}}[\vspace{0.5em}]
+
+% ===== Figure Format ===== %
+\counterwithin{figure}{section}
+\counterwithin{table}{section}
+
+% ===== Figure Caption Format ===== %
+\DeclareCaptionFormat{boldLabel}
+{%
+    \textbf{#1#2} #3
+}
+\captionsetup{format=boldLabel}
+
+%%%
+\setcounter{secnumdepth}{4}
+\setcounter{tocdepth}{3}
+\makeatletter
+\newcounter {subsubsubsection}[subsubsection]
+\renewcommand\thesubsubsubsection{\thesubsubsection .\@alph\c@subsubsubsection}
+\newcommand\subsubsubsection{\@startsection{subsubsubsection}{4}{\z@}%
+                                     {-3.25ex\@plus -1ex \@minus -.2ex}%
+                                     {1.5ex \@plus .2ex}%
+                                     {\normalfont\normalsize\bfseries}}
+\newcommand*\l@subsubsubsection{\@dottedtocline{3}{10.0em}{4.1em}}
+\newcommand*{\subsubsubsectionmark}[1]{}
+\makeatother
+
+% required redeclare for footer to work
+\def\thesislayout{	% A4: 210 × 297
+	\geometry{
+		a4paper,
+		left=30mm,
+		top=20mm,
+		right=20mm,
+		bottom=20mm,
+		marginparwidth=2cm,  % Fix todonotes warning
+	}
+}
+
+\thesislayout
+
+\begin{document}
+\raggedbottom  % Không căn đều theo chiều dọc (override flushbottom mặc định của twoside)
+\pagenumbering{gobble}  % No page numbers for cover pages
+\input{report/0.1_CoverPage.tex}
+
+\begin{titlepage}
+\input{report/0.2_SubCoverPage.tex}
+\end{titlepage}
+
+\setstretch{1.25}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% \begin{titlepage}
+% \input{report/0.3_InstructorSignature.tex}
+% \end{titlepage}
+
+\pagenumbering{roman}  % Roman numerals for front matter
+\input{report/1.Declaration of Authenticity.tex}
+\input{report/2.Acknowledgement.tex}
+\input{report/3.Abstraction.tex}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begingroup
+\setlength{\parskip}{0pt}
+\tableofcontents
+\endgroup
+% \listoftables
+\phantomsection
+\addcontentsline{toc}{section}{Danh sách bảng}
+{%
+    \let\oldnumberline\numberline%
+    \renewcommand{\numberline}{\tablename~\oldnumberline}%
+    \listoftables%
+}
+\newpage
+% \listoffigures
+\phantomsection
+\addcontentsline{toc}{section}{Danh sách hình vẽ}
+{%
+\let\oldnumberline\numberline%
+\renewcommand{\numberline}{\figurename~\oldnumberline}%
+\listoffigures%
+}
+\newpage
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\pagenumbering{arabic}
+\input{report/4.Chapter1_Introduction.tex}
+\input{report/5.Chapter2_Technologies.tex}
+\input{report/6.Chapter3_Tech Stack.tex}
+\input{report/7.Chapter4_System analysis and design.tex}
+\input{report/8.Chapter5_Mockup Design and Implementation.tex}
+\input{report/9.Chapter6_ Testing and Evaluation.tex}
+
+\input{report/10.Chapter7_ Conclusion.tex}
+\input{report/ref.tex}
+% \label{LastPage}
+% \input{report/13.Appendix.tex}
+%==========================================%
+
+\end{document}
+

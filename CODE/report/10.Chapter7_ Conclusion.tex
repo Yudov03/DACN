@@ -1,0 +1,273 @@
+\section{Tổng kết}
+\label{chap:tongket}
+
+\begin{indentParagraph}
+Chương này tổng kết toàn bộ quá trình nghiên cứu và phát triển hệ thống truy xuất thông tin đa phương thức từ âm thanh kết hợp Large Language Models. Nội dung bao gồm những kết quả đã đạt được, những hạn chế còn tồn tại, và hướng phát triển trong tương lai.
+\end{indentParagraph}
+
+\subsection{Những kết quả đạt được}
+
+\subsubsection{Về mặt nghiên cứu}
+
+Đề tài đã hoàn thành các mục tiêu nghiên cứu đề ra thông qua việc khảo sát, đánh giá và tích hợp các công nghệ hiện đại trong lĩnh vực xử lý ngôn ngữ tự nhiên và truy xuất thông tin.
+
+Trong nghiên cứu về nhận dạng giọng nói cho tiếng Việt, đề tài đã khảo sát các mô hình ASR phổ biến bao gồm Whisper, wav2vec 2.0 và các dịch vụ cloud. Kết quả cho thấy Faster-Whisper là lựa chọn tối ưu với tốc độ nhanh gấp 4 lần so với Whisper gốc trong khi vẫn đảm bảo chất lượng nhận dạng tốt cho tiếng Việt. Nghiên cứu về kiến trúc RAG đã đề xuất mở rộng pipeline chuẩn với ba cơ chế chống ảo giác hoạt động phối hợp: Answer Verification kiểm tra tính chính xác của câu trả lời, Conflict Detection phát hiện mâu thuẫn giữa các nguồn, và Safe Abstention từ chối trả lời khi thiếu thông tin đáng tin cậy.
+
+Về xử lý đa phương thức, đề tài đã nghiên cứu và tích hợp thành công ba thành phần ASR, OCR và text extraction trong một pipeline thống nhất có khả năng xử lý 68 định dạng file khác nhau. Nghiên cứu về embedding và vector search đã so sánh hiệu quả của các mô hình embedding phổ biến và chứng minh ưu điểm của phương pháp hybrid search kết hợp vector search với BM25 thông qua Reciprocal Rank Fusion.
+
+\subsubsection{Về mặt kỹ thuật}
+
+Hệ thống đã được triển khai với các tính năng:
+
+\begin{table}[H]
+    \centering
+    \caption{Tổng hợp tính năng đã triển khai}
+    \label{tab:features_summary}
+    \begin{tabular}{|l|l|c|}
+        \hline
+        \textbf{Thành phần} & \textbf{Tính năng} & \textbf{Trạng thái} \\
+        \hline
+        \multirow{3}{*}{ASR} & Faster-Whisper integration & \checkmark \\
+        & Word-level timestamps & \checkmark \\
+        & VAD preprocessing & \checkmark \\
+        \hline
+        \multirow{3}{*}{Document} & 68 định dạng file & \checkmark \\
+        & Hybrid PDF (text + OCR) & \checkmark \\
+        & PaddleOCR tiếng Việt & \checkmark \\
+        \hline
+        \multirow{4}{*}{RAG} & Hybrid search (Vector + BM25) & \checkmark \\
+        & Cross-Encoder Reranking & \checkmark \\
+        & Answer Verification & \checkmark \\
+        & Conflict Detection + Safe Abstention & \checkmark \\
+        \hline
+        \multirow{2}{*}{Optimization} & Post-processing cache (MD5) & \checkmark \\
+        & Two-step pipeline & \checkmark \\
+        \hline
+        \multirow{2}{*}{UI} & Student Portal & \checkmark \\
+        & Admin Portal & \checkmark \\
+        \hline
+        TTS & Edge-TTS tiếng Việt & \checkmark \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\subsubsection{Về mặt đánh giá}
+
+Hệ thống đã được đánh giá toàn diện trên nhiều khía cạnh và đạt các chỉ số khả quan:
+
+\begin{itemize}
+    \item \textbf{Retrieval:} Hybrid search với Cross-Encoder Reranking đạt MRR \textbf{0.75}, NDCG@5 \textbf{0.71} và Recall@10 \textbf{0.83}.
+    \item \textbf{Anti-Hallucination:} Giảm 50\% hallucination rate (từ 28\% xuống 14\%), Grounding Accuracy đạt \textbf{79\%}.
+    \item \textbf{ASR:} Faster-Whisper model small đạt WER \textbf{15\%}, nhanh gấp 4x so với Whisper gốc.
+    \item \textbf{Performance:} Post-processing cache tiết kiệm \textbf{93\%} thời gian re-indexing.
+    \item \textbf{Testing:} 64 test cases passed (100\%), code coverage 92\%.
+\end{itemize}
+
+\subsubsection{Đóng góp chính của đề tài}
+
+Đóng góp quan trọng nhất của đề tài là việc đề xuất và triển khai hệ thống anti-hallucination đa tầng kết hợp ba cơ chế Answer Verification, Conflict Detection, và Safe Abstention để đảm bảo độ tin cậy của câu trả lời. Hệ thống không chỉ sinh câu trả lời mà còn kiểm chứng tính chính xác dựa trên nguồn, phát hiện mâu thuẫn giữa các tài liệu, và từ chối trả lời khi không có đủ thông tin đáng tin cậy.
+
+Bên cạnh đó, đề tài đề xuất kiến trúc two-step pipeline tách biệt giai đoạn processing (OCR/ASR) và giai đoạn indexing, kết hợp với cơ chế caching thông minh sử dụng MD5 hash. Kiến trúc này cho phép re-index tài liệu nhanh chóng mà không cần xử lý lại từ đầu khi thay đổi cấu hình chunking hay embedding model. Hệ thống cũng bảo toàn thông tin timestamp từ audio transcript xuyên suốt pipeline đến câu trả lời cuối cùng, giúp người dùng có thể xác định chính xác vị trí thông tin trong file audio gốc.
+
+Về mặt retrieval, đề tài triển khai hybrid search kết hợp vector search (semantic) và BM25 (keyword) thông qua Reciprocal Rank Fusion, kết hợp với Cross-Encoder reranking để cải thiện đáng kể chất lượng tìm kiếm. Cuối cùng, kiến trúc multi-provider cho phép hệ thống linh hoạt chuyển đổi giữa các giải pháp local như Ollama và các dịch vụ cloud như Google Gemini hay OpenAI, đáp ứng đa dạng nhu cầu về chi phí và chất lượng.
+
+\subsection{Những thiếu sót}
+
+\subsubsection{Hạn chế về kỹ thuật}
+
+Về mặt kỹ thuật, hệ thống còn một số hạn chế cần được cải thiện trong các phiên bản tiếp theo. Chất lượng của toàn bộ pipeline phụ thuộc nhiều vào độ chính xác của module ASR. Khi audio đầu vào có nhiễu hoặc giọng đọc không chuẩn, kết quả nhận dạng có thể sai lệch và ảnh hưởng lan truyền đến các bước xử lý tiếp theo bao gồm chunking, embedding và retrieval.
+
+Yêu cầu phần cứng cũng là một rào cản đối với việc triển khai rộng rãi. Để đạt hiệu năng tối ưu, hệ thống cần GPU với ít nhất 6GB VRAM cho các tác vụ ASR và inference LLM. Khi chạy trên CPU, thời gian xử lý chậm hơn đáng kể, đặc biệt với các file audio dài hoặc tài liệu lớn. Ngoài ra, các mô hình ngôn ngữ lớn có giới hạn về số lượng token trong context window, ảnh hưởng đến khả năng xử lý các câu hỏi phức tạp yêu cầu tổng hợp thông tin từ nhiều nguồn. Module OCR sử dụng PaddleOCR xử lý tốt văn bản in nhưng còn hạn chế đáng kể với chữ viết tay.
+
+\subsubsection{Hạn chế về phạm vi}
+
+Về phạm vi ứng dụng, mặc dù các mô hình ASR và LLM được sử dụng đều hỗ trợ đa ngôn ngữ, hệ thống hiện tại được tối ưu và kiểm thử chủ yếu cho tiếng Việt. Việc sử dụng với các ngôn ngữ khác có thể cho kết quả không tối ưu do chưa được điều chỉnh về prompt, post-processing và đánh giá.
+
+Hệ thống hiện tại xử lý theo phương thức batch, nghĩa là người dùng cần upload file audio hoàn chỉnh và chờ xử lý xong trước khi có thể truy vấn. Khả năng nhận dạng giọng nói và trả lời câu hỏi trong thời gian thực (real-time streaming) chưa được hỗ trợ. Ngoài ra, mỗi câu hỏi của người dùng được xử lý độc lập mà không có context từ các lượt hỏi đáp trước đó, điều này hạn chế khả năng xử lý các cuộc hội thoại nhiều lượt (multi-turn conversation) khi người dùng muốn hỏi thêm về một chủ đề đã được đề cập.
+
+\subsubsection{Hạn chế về đánh giá}
+
+Quá trình đánh giá hệ thống còn một số hạn chế cần được khắc phục để có cái nhìn toàn diện hơn về hiệu quả thực tế. Bộ dữ liệu đánh giá hiện tại chỉ bao gồm 100 câu hỏi kiểm thử, con số này còn khá nhỏ để có thể đưa ra kết luận chắc chắn về chất lượng hệ thống trong các tình huống đa dạng của thực tế.
+
+Đánh giá User Trust Score được thực hiện trên nhóm người dùng có quy mô hạn chế, chưa đủ để khái quát hóa về mức độ tin tưởng của người dùng đối với hệ thống. Ngoài ra, việc so sánh với các hệ thống tương tự (baseline comparison) chưa được thực hiện đầy đủ, điều này làm hạn chế khả năng đánh giá vị trí của hệ thống so với các giải pháp hiện có trên thị trường.
+
+\subsection{Hướng phát triển trong tương lai}
+
+% Hình \ref{fig:roadmap} thể hiện lộ trình phát triển hệ thống trong các giai đoạn tiếp theo:
+
+% \begin{figure}[H]
+%     \centering
+%     \begin{tikzpicture}[
+%         phase/.style={rectangle, draw=black, fill=blue!15, minimum width=3.5cm, minimum height=1cm, align=center, rounded corners=5pt},
+%         item/.style={rectangle, draw=gray, fill=gray!10, minimum width=3cm, minimum height=0.6cm, align=center, font=\footnotesize, rounded corners=3pt},
+%         arrow/.style={->, >=stealth, thick, gray}
+%     ]
+%         % Timeline
+%         \draw[thick, ->] (0,0) -- (14,0) node[right] {Thời gian};
+
+%         % Phases
+%         \node[phase, fill=green!20] (p1) at (2, 1.5) {Ngắn hạn\\(3-6 tháng)};
+%         \node[phase, fill=yellow!20] (p2) at (7, 1.5) {Trung hạn\\(6-12 tháng)};
+%         \node[phase, fill=orange!20] (p3) at (12, 1.5) {Dài hạn\\(12+ tháng)};
+
+%         % Short-term items
+%         \node[item] at (2, 0.3) {Streaming ASR};
+%         \node[item] at (2, -0.4) {Multi-turn chat};
+%         \node[item] at (2, -1.1) {Speaker diarization};
+
+%         % Mid-term items
+%         \node[item] at (7, 0.3) {Fine-tune Whisper VN};
+%         \node[item] at (7, -0.4) {Mobile app};
+%         \node[item] at (7, -1.1) {REST API service};
+
+%         % Long-term items
+%         \node[item] at (12, 0.3) {Multimodal (Video)};
+%         \node[item] at (12, -0.4) {Knowledge Graph};
+%         \node[item] at (12, -1.1) {Explainable AI};
+
+%         % Arrows
+%         \draw[arrow] (p1) -- (p2);
+%         \draw[arrow] (p2) -- (p3);
+
+%     \end{tikzpicture}
+%     \caption{Lộ trình phát triển hệ thống (Roadmap)}
+%     \label{fig:roadmap}
+% \end{figure}
+
+% \subsubsection{Cải thiện ngắn hạn (3-6 tháng)}
+
+% Trong ngắn hạn, một số cải thiện quan trọng có thể được thực hiện để nâng cao trải nghiệm người dùng và hiệu quả hệ thống. Việc tích hợp \textbf{Whisper streaming} sẽ cho phép nhận dạng giọng nói trong thời gian thực, người dùng có thể thấy kết quả transcription ngay khi đang nói thay vì phải chờ xử lý toàn bộ file. Tính năng \textbf{hội thoại nhiều lượt} có thể được bổ sung bằng cách lưu trữ conversation history, cho phép hệ thống hiểu context từ các câu hỏi trước và xử lý các câu hỏi follow-up một cách tự nhiên.
+
+% Về mặt tối ưu hiệu năng, việc áp dụng \textbf{Cross-Encoder distillation} sẽ giúp giảm đáng kể độ trễ của bước reranking bằng cách sử dụng mô hình nhỏ hơn (MiniLM) trong khi vẫn duy trì chất lượng xếp hạng. Tính năng \textbf{speaker diarization} phân biệt người nói trong audio đa giọng sẽ giúp transcript rõ ràng hơn và hỗ trợ tốt hơn cho việc trích dẫn nguồn. Ngoài ra, việc triển khai \textbf{parallel processing} để xử lý song song nhiều file sẽ giảm đáng kể thời gian import khi người dùng upload nhiều tài liệu cùng lúc.
+
+% \subsubsection{Mở rộng trung hạn (6-12 tháng)}
+
+% Trong trung hạn, hệ thống có thể được mở rộng theo nhiều hướng để tăng tính ứng dụng và phạm vi sử dụng. Việc \textbf{fine-tune Whisper và LLM} cho domain giáo dục Việt Nam sẽ cải thiện đáng kể chất lượng nhận dạng các thuật ngữ chuyên ngành và khả năng trả lời các câu hỏi đặc thù của lĩnh vực này. Phát triển \textbf{ứng dụng di động} sẽ giúp sinh viên có thể tra cứu thông tin mọi lúc mọi nơi thông qua smartphone.
+
+% Việc cung cấp \textbf{REST API service} sẽ cho phép các hệ thống khác như Learning Management System hay Student Portal của trường tích hợp khả năng truy vấn thông tin từ knowledge base. \textbf{Hỗ trợ đa ngôn ngữ} sẽ mở rộng phạm vi người dùng tiềm năng sang các trường quốc tế hoặc các chương trình đào tạo bằng tiếng Anh. Ngoài ra, một \textbf{dashboard phân tích} chi tiết về xu hướng câu hỏi và hành vi sử dụng sẽ cung cấp insights có giá trị cho nhà trường trong việc cải thiện nội dung tài liệu và chất lượng đào tạo.
+
+% \subsubsection{Nghiên cứu dài hạn (12+ tháng)}
+
+% Về dài hạn, có nhiều hướng nghiên cứu tiềm năng có thể được khám phá để nâng cao năng lực của hệ thống lên tầm cao mới. \textbf{Multimodal understanding} cho phép xử lý đồng thời audio, video và hình ảnh trong slide bài giảng để hiểu sâu hơn nội dung đào tạo. Ví dụ, khi giảng viên đề cập đến một biểu đồ trên slide, hệ thống có thể kết hợp thông tin từ lời giảng và hình ảnh để trả lời câu hỏi một cách toàn diện.
+
+% Việc tích hợp \textbf{knowledge graph} sẽ giúp hệ thống xây dựng mạng lưới kiến thức có cấu trúc từ các tài liệu đã xử lý, từ đó cải thiện khả năng reasoning và trả lời các câu hỏi yêu cầu suy luận nhiều bước. Cơ chế \textbf{active learning} cho phép hệ thống học từ feedback của người dùng như việc đánh giá câu trả lời hay sửa lỗi transcript để liên tục cải thiện chất lượng theo thời gian.
+
+% Trong bối cảnh bảo mật dữ liệu ngày càng được coi trọng, \textbf{federated learning} là hướng nghiên cứu quan trọng cho phép nhiều cơ sở giáo dục cùng đào tạo và cải thiện mô hình chung mà không cần chia sẻ dữ liệu riêng tư. Cuối cùng, \textbf{explainable AI} giúp người dùng hiểu cách hệ thống đưa ra câu trả lời thông qua việc giải thích quá trình reasoning và trích dẫn nguồn chi tiết, tăng độ tin cậy và khả năng kiểm chứng.
+
+Giai đoạn 2 (Luận văn tốt nghiệp) tập trung vào việc hoàn thiện, đánh giá chi tiết, và mở rộng hệ thống.
+
+\subsubsection{Mục tiêu giai đoạn 2}
+
+Giai đoạn 2 có bốn mục tiêu chính. \textbf{Xây dựng bộ evaluation dataset chuẩn cho tiếng Việt} với 500+ câu hỏi kèm ground truth answers, được phân loại theo độ khó và loại câu hỏi. \textbf{Đánh giá hiệu năng toàn diện} bao gồm ASR (Word Error Rate, Character Error Rate), Retrieval (MRR@10, NDCG@10, Recall@k), và End-to-end (F1 Score, Exact Match). \textbf{Tối ưu hóa hiệu năng} tập trung vào tăng throughput ASR với batch processing và cải thiện retrieval accuracy với query expansion. \textbf{Mở rộng tính năng} bao gồm real-time streaming ASR và multi-turn conversation với context management.
+
+\subsubsection{Lịch trình chi tiết theo tuần}
+
+\begin{table}[H]
+\centering
+\caption{Lịch trình chi tiết giai đoạn 2}
+\label{tab:phase2_detailed}
+\begin{tabular}{|c|p{5cm}|p{5cm}|}
+\hline
+\textbf{Tuần} & \textbf{Công việc} & \textbf{Deliverable} \\
+\hline
+1-2 & Xây dựng evaluation dataset & Bộ 500+ câu hỏi với ground truth \\
+\hline
+3-4 & Đánh giá ASR và Retrieval & Báo cáo WER, MRR, NDCG, Recall \\
+\hline
+5-6 & Tối ưu ASR (batch, GPU) & Tăng throughput 2x \\
+\hline
+7-8 & Tối ưu Retrieval (reranking) & Cải thiện MRR 10\% \\
+\hline
+9-10 & Real-time streaming ASR & Demo streaming ASR \\
+\hline
+11-12 & Multi-turn conversation & Conversation history \\
+\hline
+13-14 & Docker containerization & Docker Compose setup \\
+\hline
+15-16 & Hoàn thiện báo cáo & Luận văn tốt nghiệp \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsubsection{Tiêu chí đánh giá thành công}
+
+\begin{table}[H]
+\centering
+\caption{Tiêu chí đánh giá thành công giai đoạn 2}
+\label{tab:success_criteria}
+\begin{tabular}{|p{5cm}|p{4cm}|p{4cm}|}
+\hline
+\textbf{Tiêu chí} & \textbf{Mục tiêu} & \textbf{Cách đo lường} \\
+\hline
+ASR Word Error Rate & $<$ 15\% & Test trên 100+ audio files \\
+\hline
+Retrieval MRR@10 & $>$ 0.7 & Test trên 500+ queries \\
+\hline
+RAG F1 Score & $>$ 0.75 & Test trên evaluation dataset \\
+\hline
+Anti-hallucination accuracy & $>$ 90\% & Manual evaluation \\
+\hline
+Query latency & $<$ 5 giây (P95) & Load testing \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsubsection{Rủi ro và biện pháp giảm thiểu}
+
+\begin{table}[H]
+\centering
+\caption{Phân tích rủi ro giai đoạn 2}
+\label{tab:phase2_risks}
+\begin{tabular}{|p{4cm}|c|p{5cm}|}
+\hline
+\textbf{Rủi ro} & \textbf{Mức độ} & \textbf{Biện pháp giảm thiểu} \\
+\hline
+Thiếu GPU cho benchmark & Trung bình & Sử dụng Google Colab hoặc cloud GPU \\
+\hline
+Chất lượng dataset thấp & Cao & Crowdsourcing và expert review \\
+\hline
+Real-time ASR không đạt & Trung bình & Fallback về batch processing \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Bài học kinh nghiệm}
+
+\subsubsection{Về tối ưu hóa hệ thống}
+
+Việc triển khai post-processing cache với MD5 hash key đã giúp tiết kiệm 93\% thời gian khi re-indexing. Caching là chìa khóa hiệu năng, xác định sớm các bottleneck trong pipeline và triển khai caching một cách có chiến lược.
+
+Việc chỉ load các module nặng khi cần thiết giúp startup time giảm từ 30s xuống 2s. Lazy loading cải thiện UX đáng kể, người dùng có trải nghiệm mượt mà hơn khi khởi động ứng dụng.
+
+Tách processing (OCR/ASR) khỏi indexing cho phép thay đổi cấu hình chunking hay embedding model mà không cần xử lý lại từ đầu, tiết kiệm đáng kể thời gian phát triển và thử nghiệm. Điều này chứng tỏ Two-step pipeline tăng tính linh hoạt cho hệ thống.
+
+\subsubsection{Về phương pháp RAG}
+
+Hybrid search kết hợp vector search với BM25 đạt MRR 0.70, cao hơn đáng kể so với vector-only (0.62) hay BM25-only (0.55). Mỗi phương pháp có điểm mạnh riêng và việc kết hợp thông minh phát huy tối đa ưu điểm của cả hai là điều nên làm.
+
+Cross-Encoder reranking cải thiện MRR từ 0.70 lên 0.75, chứng minh giá trị của việc sử dụng mô hình chính xác hơn cho giai đoạn cuối cùng khi số lượng candidates đã được thu hẹp. Vì vậy Reranking là bước quan trọng không thể bỏ qua.
+
+\subsubsection{Về tính tin cậy của AI trong giáo dục}
+
+Trong môi trường giáo dục, việc đưa ra thông tin sai có thể gây hậu quả nghiêm trọng. Hệ thống cần được thiết kế để từ chối trả lời khi không chắc chắn, thay vì cố gắng "bịa" câu trả lời.
+
+Cơ chế verification cần được tích hợp từ đầu trong kiến trúc hệ thống, Anti-hallucination phải là thiết kế cốt lõi, không phải tính năng phụ. Điều này đảm bảo mọi câu trả lời đều được kiểm chứng trước khi đến tay người dùng.
+
+Người dùng sẽ mất niềm tin nếu hệ thống đưa ra câu trả lời sai. Grounding Accuracy 79\% có ý nghĩa hơn việc cố gắng trả lời 100\% câu hỏi với độ chính xác thấp.
+
+\subsection{Kết luận}
+
+Đề tài "Hệ thống Truy xuất Thông tin Đa phương thức từ Âm thanh Kết hợp Large Language Models" đã hoàn thành các mục tiêu đề ra:
+
+\begin{itemize}
+    \item \textbf{ASR chất lượng cao:} Faster-Whisper đạt WER 15\%, nhanh gấp 4x so với Whisper gốc.
+    \item \textbf{Document processing toàn diện:} Hỗ trợ nhiều định dạng file với hybrid PDF và PaddleOCR.
+    \item \textbf{RAG với Anti-Hallucination:} MRR 0.75, giảm 50\% hallucination, 79\% grounding accuracy.
+    \item \textbf{Tối ưu hiệu năng:} 93\% tiết kiệm thời gian re-indexing, 2s startup time.
+    \item \textbf{Giao diện thân thiện:} Dual portal (Student/Admin) với Voice Input và TTS.
+    \item \textbf{Triển khai linh hoạt:} Hỗ trợ cả local (Ollama) và cloud (Gemini, OpenAI).
+\end{itemize}
+
+Hệ thống có tiềm năng ứng dụng cao trong môi trường giáo dục, giúp sinh viên dễ dàng truy xuất thông tin từ các nguồn đa phương thức như bài giảng audio, tài liệu PDF, và văn bản. Với lộ trình phát triển đã đề xuất từ streaming ASR ngắn hạn đến multimodal understanding dài hạn, hệ thống có thể tiếp tục được cải thiện và mở rộng để đáp ứng nhu cầu ngày càng cao của người dùng trong kỷ nguyên AI.
+
+\newpage

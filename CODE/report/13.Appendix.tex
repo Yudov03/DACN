@@ -1,0 +1,86 @@
+\phantomsection
+\addcontentsline{toc}{section}{Phụ lục}
+\section*{Phụ lục}
+
+\phantomsection
+\addcontentsline{toc}{subsection}{Phụ lục A: Kế hoạch giai đoạn 2}
+\subsection*{Phụ lục A: Kế hoạch giai đoạn 2}
+
+Giai đoạn 2 (Luận văn tốt nghiệp) tập trung vào việc hoàn thiện, đánh giá chi tiết, và mở rộng hệ thống.
+
+\subsubsection*{A.1. Mục tiêu giai đoạn 2}
+
+Giai đoạn 2 có bốn mục tiêu chính. \textbf{Xây dựng bộ evaluation dataset chuẩn cho tiếng Việt} với 500+ câu hỏi kèm ground truth answers, được phân loại theo độ khó và loại câu hỏi. \textbf{Đánh giá hiệu năng toàn diện} bao gồm ASR (Word Error Rate, Character Error Rate), Retrieval (MRR@10, NDCG@10, Recall@k), và End-to-end (F1 Score, Exact Match). \textbf{Tối ưu hóa hiệu năng} tập trung vào tăng throughput ASR với batch processing và cải thiện retrieval accuracy với query expansion. \textbf{Mở rộng tính năng} bao gồm real-time streaming ASR và multi-turn conversation với context management.
+
+\subsubsection*{A.2. Lịch trình chi tiết theo tuần}
+
+\begin{table}[H]
+\centering
+\caption{Lịch trình chi tiết giai đoạn 2}
+\label{tab:phase2_detailed}
+\begin{tabular}{|c|p{5cm}|p{5cm}|p{3cm}|}
+\hline
+\textbf{Tuần} & \textbf{Công việc} & \textbf{Deliverable} & \textbf{Phụ trách} \\
+\hline
+1-2 & Xây dựng evaluation dataset & Bộ 500+ câu hỏi với ground truth & Toàn nhóm \\
+\hline
+3-4 & Đánh giá ASR và Retrieval & Báo cáo WER, MRR, NDCG, Recall & Toàn nhóm \\
+\hline
+5-6 & Tối ưu ASR (batch, GPU) & Tăng throughput 2x & Thành viên 1 \\
+\hline
+7-8 & Tối ưu Retrieval (reranking) & Cải thiện MRR 10\% & Thành viên 2 \\
+\hline
+9-10 & Real-time streaming ASR & Demo streaming ASR & Thành viên 1 \\
+\hline
+11-12 & Multi-turn conversation & Conversation history & Thành viên 2 \\
+\hline
+13-14 & Docker containerization & Docker Compose setup & Toàn nhóm \\
+\hline
+15-16 & Hoàn thiện báo cáo & Luận văn tốt nghiệp & Toàn nhóm \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsubsection*{A.3. Tiêu chí đánh giá thành công}
+
+\begin{table}[H]
+\centering
+\caption{Tiêu chí đánh giá thành công giai đoạn 2}
+\label{tab:success_criteria}
+\begin{tabular}{|p{5cm}|p{4cm}|p{4cm}|}
+\hline
+\textbf{Tiêu chí} & \textbf{Mục tiêu} & \textbf{Cách đo lường} \\
+\hline
+ASR Word Error Rate & $<$ 15\% & Test trên 100+ audio files \\
+\hline
+Retrieval MRR@10 & $>$ 0.7 & Test trên 500+ queries \\
+\hline
+RAG F1 Score & $>$ 0.75 & Test trên evaluation dataset \\
+\hline
+Anti-hallucination accuracy & $>$ 90\% & Manual evaluation \\
+\hline
+Query latency & $<$ 5 giây (P95) & Load testing \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsubsection*{A.4. Rủi ro và biện pháp giảm thiểu}
+
+\begin{table}[H]
+\centering
+\caption{Phân tích rủi ro giai đoạn 2}
+\label{tab:phase2_risks}
+\begin{tabular}{|p{4cm}|c|p{5cm}|}
+\hline
+\textbf{Rủi ro} & \textbf{Mức độ} & \textbf{Biện pháp giảm thiểu} \\
+\hline
+Thiếu GPU cho benchmark & Trung bình & Sử dụng Google Colab hoặc cloud GPU \\
+\hline
+Chất lượng dataset thấp & Cao & Crowdsourcing và expert review \\
+\hline
+Real-time ASR không đạt & Trung bình & Fallback về batch processing \\
+\hline
+\end{tabular}
+\end{table}
+
+\newpage

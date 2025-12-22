@@ -1,0 +1,22 @@
+\phantomsection
+\addcontentsline{toc}{section}{Tóm tắt đề tài}
+\section*{Tóm tắt đề tài}
+
+% Context
+Việc truy xuất thông tin từ dữ liệu âm thanh trong môi trường giáo dục đặt ra nhiều thách thức kỹ thuật đặc thù. Các bài giảng được ghi âm thường chứa thuật ngữ chuyên ngành, giọng nói có đặc điểm vùng miền, và cấu trúc nội dung phức tạp với nhiều chủ đề đan xen. Trong khi đó, các hệ thống nhận dạng giọng nói phổ biến chưa được tối ưu hóa cho tiếng Việt, và mô hình ngôn ngữ lớn (LLM) thường sinh ra thông tin không có căn cứ khi được hỏi về nội dung cụ thể.
+
+% Problem
+Nghiên cứu này tập trung giải quyết hai bài toán chính: (1) xây dựng pipeline xử lý âm thanh tiếng Việt với khả năng lưu giữ thông tin vị trí thời gian phục vụ trích dẫn nguồn, và (2) phát triển cơ chế kiểm soát để giảm thiểu hiện tượng ảo giác (hallucination) khi LLM sinh câu trả lời dựa trên nội dung được truy xuất.
+
+% Method
+Hệ thống đề xuất kiến trúc Hybrid RAG xây dựng kho tri thức thống nhất từ âm thanh và các tài liệu văn bản đi kèm, kết hợp ba thành phần chính. Thành phần thứ nhất là pipeline xử lý âm thanh tích hợp Voice Activity Detection (VAD) với ASR, trong đó VAD lọc các đoạn im lặng trước khi đưa vào mô hình nhận dạng, đồng thời ánh xạ word-level timestamps để định vị chính xác vị trí từng câu trong file gốc. Thành phần thứ hai là hệ thống tìm kiếm hybrid kết hợp semantic search với BM25 thông qua phương pháp weighted combination, sau đó sử dụng cross-encoder để rerank kết quả trên cả hai loại nguồn dữ liệu. Thành phần thứ ba là cơ chế chống ảo giác ba tầng giúp hệ thống duy trì độ tin cậy cao ngay cả khi dữ liệu ASR có nhiễu: Answer Verification đánh giá mức độ grounding của câu trả lời so với nguồn tài liệu, Information Resolution dựa trên trọng số thời gian để phát hiện và giải quyết mâu thuẫn giữa các nguồn bằng cách ưu tiên thông tin có metadata thời gian mới hơn, và Safe Abstention từ chối trả lời khi độ tin cậy thấp hoặc không tìm thấy thông tin liên quan.
+
+% Results
+Kết quả thực nghiệm trên tập dữ liệu đa phương thức gồm 50 bài giảng âm thanh và 80 tài liệu văn bản tương ứng, với 100 câu hỏi đánh giá cho thấy: module ASR đạt Word Error Rate 15\% với tốc độ xử lý nhanh gấp 4 lần so với Whisper gốc (RTF = 0.06); hệ thống retrieval đạt MRR 0.75 và Recall@10 là 83\%, chứng minh khả năng truy xuất chính xác trên cả hai loại nguồn dữ liệu; cơ chế chống ảo giác nâng Grounding Accuracy từ 65\% lên 79\% và giảm tỷ lệ hallucination từ 28\% xuống 14\%. Thời gian phản hồi trung bình cho một truy vấn là 1.8 giây trên GPU tầm trung.
+
+% Conclusion
+% Hệ thống có thể hoạt động hoàn toàn cục bộ (offline) mà không phụ thuộc dịch vụ cloud, đáp ứng yêu cầu về bảo mật dữ liệu và chi phí vận hành của các cơ sở giáo dục. Tính năng Voice Input cho phép người dùng đặt câu hỏi bằng giọng nói và nhận câu trả lời qua Text-to-Speech, tạo trải nghiệm hỏi đáp hoàn toàn bằng âm thanh.
+
+\textbf{Từ khóa:} Truy xuất đa phương thức, Nhận dạng giọng nói tiếng Việt, Retrieval-Augmented Generation, Chống ảo giác, Hybrid Search, Siêu dữ liệu thời gian.
+
+\newpage

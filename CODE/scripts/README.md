@@ -14,6 +14,7 @@ scripts/
 ├── demo_anti_hallucination.py  # Anti-hallucination demo
 ├── demo_tts.py                 # Text-to-Speech demo
 ├── demo_knowledge_base.py      # Knowledge Base demo
+├── demo_optimizations.py       # Optimization modules demo
 └── README.md
 ```
 
@@ -68,6 +69,8 @@ python scripts/process_resources.py --clear
 - `data/knowledge_base/transcripts/` - Kết quả ASR (audio/video)
 - `data/knowledge_base/processed/` - JSON với nội dung RAW
 
+**Note:** `--clear` xóa files trong thư mục, giữ nguyên folder structure (giống `KnowledgeBase.clear_all()`).
+
 #### Step 2: reindex_documents.py
 
 Post-process và index vào Qdrant từ processed data.
@@ -86,9 +89,10 @@ python scripts/reindex_documents.py --file doc_98e6508e
 **Pipeline:** processed/ → Post-process (LLM) → Chunk → Embed → Qdrant
 
 **Features:**
-- Post-processing với **caching** (Cache HIT ~0.0s)
-- Tự động **delete old chunks** khi index lại từng file
+- Post-processing với **caching** (Cache HIT ~0.0s, Cache MISS ~5-30s)
+- Tự động **delete old chunks** khi re-index từng file (`--file doc_id`)
 - Progress tracking với timestamps
+- `--reset` xóa collection Qdrant và index lại từ đầu
 
 ### Khi nào dùng Option nào?
 

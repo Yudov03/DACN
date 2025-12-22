@@ -1,0 +1,227 @@
+\section{Giới thiệu}
+\label{chap:introduction}
+\addtocontents{toc}{\protect\setcounter{tocdepth}{2}}
+
+\begin{indentParagraph}
+    \textit{Chương này trình bày tổng quan về đề tài, bao gồm bối cảnh và động lực nghiên cứu, mục tiêu cần đạt được, phạm vi thực hiện, phân tích yêu cầu hệ thống, và cấu trúc của báo cáo.}
+\end{indentParagraph}
+
+\subsection{Đặt vấn đề}
+\label{subsec:problem_statement}
+
+Các cơ sở giáo dục đại học đang đối mặt với sự bùng nổ của dữ liệu phi cấu trúc. Mỗi học kỳ, hàng nghìn giờ bài giảng được ghi âm, hàng trăm video hội thảo được lưu trữ, cùng với vô số quyết định hành chính, thông báo và tài liệu học thuật được ban hành. Tuy nhiên, phần các lớn tri thức này là những tài nguyên số được thu thập và lưu trữ nhưng không được lập chỉ mục (Dark Data \cite{halevy2009unreasonable}), do đó không thể truy cập thông qua các phương thức truy vấn thông thường.
+
+Vấn đề trở nên nghiêm trọng hơn khi xét đến hiện tượng đứt gãy tri thức trong môi trường giảng dạy. Khi giảng viên thực hiện bài giảng, họ thường bổ sung nhiều nội dung quan trọng không có trong slide hay giáo trình: ví dụ minh họa thực tế, giải thích chuyên sâu, ... Phần lớn các thông tin này chỉ tồn tại trong luồng âm thanh, không được ghi lại trong tài liệu bổ trợ \cite{heilesen2010lecture}. Nếu không được xử lý, lượng tri thức này sẽ trở thành dữ liệu tối, không thể được khai thác lại bởi sinh viên. Thách thức kỹ thuật nằm ở việc chuyển đổi âm thanh sang văn bản. Các hệ thống ASR phổ biến thường thiếu tối ưu cho tiếng Việt, đặc biệt là hiện tượng \textbf{code-switching} (xen kẽ thuật ngữ STEM tiếng Anh). Bên cạnh đó, các phương pháp tìm kiếm truyền thống dựa trên từ khóa không thể xử lý được các truy vấn mang tính ngữ nghĩa phức tạp.
+
+Sự ra đời của các mô hình ngôn ngữ lớn như GPT-4, Gemini, hay LLaMA đã mở ra hướng tiếp cận mới cho bài toán truy xuất và tổng hợp thông tin \cite{brown2020language}. Tuy nhiên, việc áp dụng LLMs trong môi trường giáo dục đặt ra ba thách thức quan trọng. Thứ nhất là hiện tượng ảo giác (hallucination) khi LLMs có xu hướng sinh ra thông tin không chính xác hoặc bịa đặt khi được hỏi về nội dung cụ thể mà chúng không có trong dữ liệu huấn luyện \cite{ji2023hallucination}. Trong bối cảnh giáo dục, một câu trả lời sai về quy chế học vụ hay thông tin học phí có thể gây hậu quả nghiêm trọng cho sinh viên. Thứ hai là vấn đề quyền riêng tư và bảo mật dữ liệu. Việc gửi dữ liệu bài giảng nội bộ, thông tin sinh viên, hay tài liệu chưa công bố lên các dịch vụ cloud của bên thứ ba như OpenAI hay Google đặt ra vấn đề pháp lý và bảo mật nghiêm trọng. Nhiều cơ sở giáo dục có chính sách cấm chia sẻ dữ liệu nội bộ ra bên ngoài. Thứ ba là chi phí và tự chủ công nghệ. Sự phụ thuộc vào các dịch vụ LLM thương mại không chỉ tạo ra gánh nặng tài chính mà còn đặt cơ sở giáo dục vào thế bị động khi nhà cung cấp thay đổi chính sách, giá cả, hoặc ngừng hoạt động.
+
+Từ những phân tích trên, việc xây dựng một hệ thống truy xuất thông tin đa phương thức có khả năng xử lý và tìm kiếm nội dung từ âm thanh, video và văn bản, kết hợp LLMs với cơ chế kiểm chứng để giảm thiểu ảo giác, đồng thời hoạt động hoàn toàn cục bộ để đảm bảo bảo mật và tự chủ công nghệ là một nhu cầu thiết thực và cấp bách của các cơ sở giáo dục.
+
+\subsection{Mục tiêu đề tài}
+\label{subsec:objectives}
+
+\subsubsection{Mục tiêu tổng quát}
+
+Xuất phát từ những thách thức đã phân tích ở phần đặt vấn đề, nghiên cứu này hướng đến việc xây dựng một hệ thống truy xuất thông tin thông minh dựa trên mô hình ngôn ngữ lớn (LLM), có khả năng xử lý dữ liệu đa phương thức bao gồm âm thanh, video và văn bản. Điểm khác biệt cốt lõi so với các giải pháp hiện có nằm ở ba yếu tố: \textit{(i)} tính chính xác thông qua cơ chế kiểm chứng câu trả lời, \textit{(ii)} tính bảo mật nhờ khả năng vận hành hoàn toàn cục bộ, và \textit{(iii)} tính tự chủ công nghệ khi không phụ thuộc vào dịch vụ bên thứ ba.
+
+\subsubsection{Mục tiêu cụ thể}
+
+\textbf{Mục tiêu xử lý âm thanh và ngôn ngữ.} Đây là nền tảng của toàn bộ hệ thống, nhằm giải quyết thách thức về ``dữ liệu tối'' đã nêu trong phần đặt vấn đề. Cụ thể, nghiên cứu phát triển pipeline ASR tiếng Việt được tối ưu cho bối cảnh học thuật, đặc biệt là khả năng xử lý hiện tượng code-switching phổ biến trong giảng dạy các ngành STEM. Pipeline này tích hợp Voice Activity Detection (VAD) để lọc các đoạn im lặng, đồng thời duy trì word-level timestamps nhằm thiết lập mối liên kết chính xác giữa văn bản phiên âm và vị trí thời gian trong file gốc.
+
+\textbf{Mục tiêu truy xuất tri thức đa phương thức.} Sau khi âm thanh đã được chuyển đổi thành văn bản, thách thức tiếp theo là làm sao tìm kiếm hiệu quả trên kho tri thức hỗn hợp. Nghiên cứu hiện thực hóa kiến trúc Hybrid RAG, kết hợp Dense Retrieval (nhúng vector) để nắm bắt ngữ nghĩa với Sparse Retrieval (BM25) để đảm bảo không bỏ sót các thuật ngữ chuyên ngành. Sự kết hợp này giải quyết điểm yếu của từng phương pháp khi sử dụng riêng lẻ.
+
+\textbf{Mục tiêu kiểm soát chất lượng phản hồi.} Đây là mục tiêu phân biệt nghiên cứu này với các hệ thống RAG thông thường. Nhằm giải quyết vấn đề ảo giác của LLM -- một rủi ro nghiêm trọng trong bối cảnh giáo dục, nghiên cứu thiết lập cơ chế chống ảo giác ba tầng: \textit{Answer Verification} để kiểm tra độ trung thực của câu trả lời so với nguồn, \textit{Information Resolution} để phát hiện và hòa giải mâu thuẫn giữa các nguồn thông tin, và \textit{Safe Abstention} để từ chối trả lời khi không có đủ căn cứ. Mục tiêu cuối cùng là đảm bảo mọi câu trả lời đều được grounding hoàn toàn vào cơ sở tri thức nội bộ.
+
+\textbf{Mục tiêu tương tác và tối ưu hóa.} Mục tiêu này tập trung vào khía cạnh trải nghiệm người dùng và tính khả thi triển khai. Về tương tác, nghiên cứu xây dựng giao diện hỏi đáp đa phương thức Voice-to-Voice, cho phép sinh viên đặt câu hỏi bằng giọng nói và nhận câu trả lời được đọc tự động. Về tối ưu hóa, hệ thống được điều chỉnh để vận hành ổn định trên hạ tầng phần cứng cục bộ với tổng thời gian phản hồi dưới 10 giây cho các truy vấn thông thường, đồng thời hỗ trợ \textit{streaming} để tối ưu trải nghiệm chờ đợi của người dùng. Hệ thống không yêu cầu kết nối Internet trong quá trình sử dụng.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{report/figures/objective_dataflow.png}
+    \caption{Sơ đồ luồng dữ liệu tổng quan và mối liên hệ với các mục tiêu cụ thể}
+    \label{fig:objective_dataflow}
+\end{figure}
+
+\subsection{Phạm vi đề tài}
+\label{subsec:scope}
+
+Phần này xác định rõ ranh giới của đề tài trên ba khía cạnh: loại dữ liệu được xử lý, công nghệ được lựa chọn, và những giới hạn mà nghiên cứu không đề cập đến. Việc phân định rõ ràng này giúp định hướng kỳ vọng của người đọc và tạo cơ sở cho việc đánh giá kết quả nghiên cứu.
+
+\subsubsection{Phạm vi về chức năng và dữ liệu}
+
+Xuất phát từ bối cảnh ứng dụng trong môi trường giáo dục đại học, nghiên cứu tập trung vào hai nguồn dữ liệu chính với các đặc điểm riêng biệt.
+
+Đối với \textbf{dữ liệu âm thanh và video}, phạm vi bao gồm các bài giảng được ghi âm với độ dài từ 15 phút đến 120 phút mỗi file, tương ứng với một tiết học hoặc buổi giảng hoàn chỉnh. Chất lượng âm thanh yêu cầu ở mức trung bình trở lên, tương đương với ghi âm bằng smartphone hoặc thiết bị chuyên dụng trong phòng học có kiểm soát tiếng ồn. Đáng lưu ý, mặc dù hệ thống tiếp nhận cả file video, quá trình xử lý chỉ trích xuất phần âm thanh để phân tích -- do đó, nghiên cứu này được định vị chính xác hơn là \textbf{``Truy xuất đa phương thức dựa trên nội dung tiếng nói''}, khai thác tri thức từ luồng thông tin nói trong các định dạng vật lý khác nhau. Nội dung hình ảnh trong video như slide trình chiếu, bảng viết, hay cử chỉ giảng viên nằm ngoài phạm vi xử lý của nghiên cứu này.
+
+Về \textbf{dữ liệu văn bản}, hệ thống hỗ trợ các định dạng tài liệu học thuật tiêu chuẩn bao gồm PDF, Word, Excel và PowerPoint. Riêng với tài liệu PDF dạng scan hoặc hình ảnh, việc trích xuất văn bản được thực hiện thông qua OCR. Tuy nhiên, do hạn chế của các engine OCR hiện tại với ngôn ngữ Việt, hệ thống \textbf{chưa xử lý được các công thức toán học phức tạp}, sơ đồ hình học đặc thù, hoặc ký hiệu chuyên ngành nằm ngoài bộ ký tự Unicode chuẩn.
+
+Về \textbf{khả năng truy xuất}, trọng tâm nghiên cứu nằm ở việc hiện thực hóa kiến trúc \textbf{Hybrid RAG} kết hợp Dense Retrieval và Sparse Retrieval, cùng với cơ chế \textbf{Anti-hallucination} ba tầng. Các tính năng Voice Input và Text-to-Speech được xem là phương thức tương tác bổ trợ nhằm tối ưu trải nghiệm người dùng, không phải trọng tâm nghiên cứu chính. Hệ thống phục vụ hai nhóm người dùng: sinh viên tra cứu thông tin qua Student Portal, và quản trị viên thông qua Admin Portal -- một công cụ quản trị tri thức và kiểm soát dữ liệu cho phép kiểm soát chất lượng dữ liệu đầu vào, cấu hình các tham số chunking/embedding, và theo dõi trạng thái của kho tri thức.
+
+\subsubsection{Phạm vi về công nghệ và mô hình}
+
+Để đảm bảo tính tự chủ và khả năng vận hành nội bộ như đã nêu trong phần đặt vấn đề, nghiên cứu ưu tiên tuyển chọn các công nghệ mã nguồn mở có cộng đồng hỗ trợ mạnh mẽ. Bảng \ref{tab:tech_scope} tóm tắt các công nghệ chính được sử dụng trong từng module; chi tiết về cấu hình và thông số kỹ thuật sẽ được trình bày trong Chương \ref{chap:design}.
+
+\begin{table}[H]
+\centering
+\caption{Tổng quan công nghệ theo module}
+\label{tab:tech_scope}
+\begin{tabular}{|p{3.5cm}|p{4cm}|p{6.5cm}|}
+\hline
+\textbf{Module} & \textbf{Công nghệ chủ đạo} & \textbf{Công nghệ đối chứng} \\
+\hline
+Nhận dạng giọng nói & Faster-Whisper, Silero VAD & -- \\
+\hline
+Mô hình ngôn ngữ & Ollama (Qwen2.5, LLaMA) & Google Gemini, OpenAI GPT \\
+\hline
+Embedding & Sentence-BERT, E5 & Google, OpenAI Embedding API \\
+\hline
+Cơ sở dữ liệu vector & Qdrant (Hybrid Search) & -- \\
+\hline
+\end{tabular}
+\end{table}
+
+Kiến trúc được thiết kế theo mô hình \textbf{Multi-provider} với sự phân biệt rõ ràng: nhóm \textit{công nghệ chủ đạo} là các mô hình mã nguồn mở có thể triển khai hoàn toàn cục bộ, đảm bảo dữ liệu không rời khỏi máy chủ nội bộ; nhóm \textit{công nghệ đối chứng} gồm các API thương mại \textbf{chỉ được sử dụng trong giai đoạn thử nghiệm} nhằm định lượng mức độ chênh lệch chất lượng giữa giải pháp on-premise và cloud.
+
+\subsubsection{Giới hạn của đề tài}
+
+\textbf{Về nhận dạng giọng nói:} Do hạn chế về tài nguyên tính toán cục bộ, hệ thống hiện tại chưa tích hợp cơ chế \textit{Speaker Diarization} để phân tách nhiều người nói trong cùng một file âm thanh. Nghiên cứu giả định mỗi bài giảng chủ yếu có một giảng viên chính. Bên cạnh đó, việc nhận dạng thời gian thực cũng nằm ngoài phạm vi - hệ thống chỉ xử lý các file đã được ghi âm hoàn chỉnh. Âm thanh có chất lượng quá thấp (nhiều tạp âm, tiếng vọng mạnh, ghi âm từ khoảng cách xa) sẽ cho kết quả không đảm bảo.
+
+\textbf{Về ngôn ngữ và từ vựng:} Hệ thống được tối ưu cho tiếng Việt học thuật trong bối cảnh giáo dục đại học. Hiện tượng code-switching được hỗ trợ ở mức từ vựng chuyên ngành, tuy nhiên các đoạn hội thoại dài hoàn toàn bằng tiếng Anh hoặc ngoại ngữ khác sẽ không được xử lý chính xác. Tương tự, tiếng lóng, phương ngữ địa phương đặc thù, và các biến thể ngôn ngữ không chuẩn nằm ngoài phạm vi hỗ trợ.
+
+\textbf{Về cơ sở tri thức:} Hệ thống hoạt động theo nguyên tắc \textit{Closed-world Assumption} - chỉ trả lời dựa trên kho dữ liệu nội bộ đã được lập chỉ mục, không tự động cập nhật kiến thức từ Internet. Đây là quyết định thiết kế có chủ đích nhằm đảm bảo tính kiểm chứng của thông tin. Khi câu hỏi vượt ngoài phạm vi Knowledge Base, hệ thống sẽ từ chối trả lời thay vì suy luận hoặc bịa đặt.
+
+\textbf{Về OCR và xử lý tài liệu:} Độ chính xác OCR phụ thuộc trực tiếp vào chất lượng tài liệu đầu vào (độ phân giải, độ tương phản, font chữ). Để đạt kết quả tối ưu, hệ thống yêu cầu tài liệu scan có độ phân giải tối thiểu 150 DPI và văn bản rõ ràng -- đây là một phần của quy trình vận hành mà quản trị viên cần đảm bảo khi nhập liệu. Chữ viết tay và các font chữ nghệ thuật đặc biệt hiện chưa được hỗ trợ. Đặc biệt, việc xử lý \textit{bảng biểu} trong tài liệu là một thách thức chung của các hệ thống RAG, nghiên cứu này chưa tích hợp cơ chế nhận dạng cấu trúc bảng, do đó nội dung bảng được trích xuất dưới dạng văn bản tuyến tính và có thể mất đi quan hệ hàng-cột.
+
+\subsection{Phân tích yêu cầu của hệ thống}
+\label{subsec:requirements}
+
+\subsubsection{Các bên liên quan (Stakeholders)}
+
+Hệ thống có hai nhóm người dùng chính với vai trò và nhu cầu khác nhau:
+
+\begin{table}[H]
+\centering
+\caption{Các bên liên quan và vai trò}
+\label{tab:stakeholders}
+\begin{tabular}{|p{3cm}|p{5cm}|p{6cm}|}
+\hline
+\textbf{Stakeholder} & \textbf{Vai trò} & \textbf{Nhu cầu} \\
+\hline
+Sinh viên & Người dùng cuối, tra cứu thông tin & Tra cứu nhanh, câu trả lời chính xác, giao diện dễ sử dụng \\
+\hline
+Quản trị viên (Nhà trường) & Quản lý nội dung Knowledge Base & Upload tài liệu dễ dàng, quản lý hiệu quả, theo dõi thống kê \\
+\hline
+Nhà phát triển & Bảo trì và mở rộng hệ thống & Code dễ bảo trì, tài liệu đầy đủ, kiến trúc module hóa \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsubsection{Yêu cầu chức năng}
+\label{subsubsec:functional_requirements}
+
+Dựa trên phân tích các bên liên quan, hệ thống cần đáp ứng các yêu cầu chức năng được trình bày trong Bảng \ref{tab:functional_requirements}.
+
+\begin{table}[H]
+\centering
+\caption{Yêu cầu chức năng của hệ thống}
+\label{tab:functional_requirements}
+\begin{tabular}{|p{1.5cm}|p{12.5cm}|}
+\hline
+\textbf{Mã} & \textbf{Mô tả yêu cầu} \\
+\hline
+\multicolumn{2}{|l|}{\textbf{Nhóm FR1: Xử lý âm thanh và video}} \\
+\hline
+FR1.1 & Nhận dạng giọng nói từ các định dạng âm thanh (.mp3, .wav, .m4a, .flac, .ogg, .wma, .aac) \\
+\hline
+FR1.2 & Trích xuất và nhận dạng giọng nói từ video (.mp4, .avi, .mkv, .mov, .wmv, .webm) \\
+\hline
+FR1.3 & Lưu giữ thông tin timestamp của từng đoạn phiên âm \\
+\hline
+FR1.4 & Phát hiện và bỏ qua các đoạn im lặng (VAD) \\
+\hline
+\multicolumn{2}{|l|}{\textbf{Nhóm FR2: Xử lý tài liệu}} \\
+\hline
+FR2.1 & Trích xuất nội dung từ PDF, bao gồm PDF scan (thông qua OCR) \\
+\hline
+FR2.2 & Trích xuất nội dung từ các định dạng Office (Word, Excel, PowerPoint) \\
+\hline
+FR2.3 & Nhận dạng chữ từ hình ảnh (OCR) cho tiếng Việt \\
+\hline
+FR2.4 & Hỗ trợ các định dạng văn bản thuần (.txt, .md, .csv, .json, .xml) \\
+\hline
+\multicolumn{2}{|l|}{\textbf{Nhóm FR3: Quản lý Knowledge Base}} \\
+\hline
+FR3.1 & Cho phép import tài liệu từ thư mục nguồn \\
+\hline
+FR3.2 & Lưu trữ metadata của tài liệu (tên file, ngày thêm, loại file, số chunks) \\
+\hline
+FR3.3 & Cho phép xóa tài liệu khỏi Knowledge Base \\
+\hline
+FR3.4 & Cho phép re-index tài liệu khi thay đổi cấu hình \\
+\hline
+\multicolumn{2}{|l|}{\textbf{Nhóm FR4: Tìm kiếm và truy vấn}} \\
+\hline
+FR4.1 & Tìm kiếm semantic (dựa trên ngữ nghĩa) \\
+\hline
+FR4.2 & Tìm kiếm hybrid kết hợp vector search và BM25 \\
+\hline
+FR4.3 & Trả về nguồn tham khảo (sources) cùng với câu trả lời \\
+\hline
+FR4.4 & Kiểm chứng câu trả lời (Answer Verification) \\
+\hline
+FR4.5 & Hòa giải thông tin mâu thuẫn (Information Resolution) dựa trên metadata thời gian \\
+\hline
+FR4.6 & Từ chối trả lời khi không có đủ thông tin liên quan (Safe Abstention) \\
+\hline
+\multicolumn{2}{|l|}{\textbf{Nhóm FR5: Giao diện người dùng}} \\
+\hline
+FR5.1 & Cung cấp giao diện web cho sinh viên tra cứu \\
+\hline
+FR5.2 & Cung cấp giao diện web cho quản trị viên quản lý tài liệu \\
+\hline
+FR5.3 & Hỗ trợ nhập liệu bằng giọng nói (Voice Input) thông qua microphone \\
+\hline
+FR5.4 & Hỗ trợ chuyển văn bản thành giọng nói (TTS) để đọc câu trả lời \\
+\hline
+FR5.5 & Tự động đọc câu trả lời khi người dùng đặt câu hỏi bằng giọng nói \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsubsection{Yêu cầu phi chức năng}
+\label{subsubsec:non_functional_requirements}
+
+\begin{table}[H]
+\centering
+\caption{Yêu cầu phi chức năng}
+\label{tab:nfr}
+\begin{tabular}{|p{3cm}|p{2cm}|p{9cm}|}
+\hline
+\textbf{Yêu cầu} & \textbf{Mã} & \textbf{Mô tả} \\
+\hline
+Hiệu năng & NFR1 & Thời gian phản hồi truy vấn dưới 10 giây cho các câu hỏi thông thường (với LLM cục bộ). \\
+\hline
+Độ chính xác & NFR2 & Độ chính xác nhận dạng giọng nói tiếng Việt đạt WER (Word Error Rate) \textbf{dưới 15\%} với audio chất lượng tốt, tương đương Accuracy trên 85\%. \\
+\hline
+Khả năng mở rộng & NFR3 & Hệ thống phải hỗ trợ kho tri thức quy mô lên tới \textbf{10,000 chunks} mà không làm tăng đáng kể độ trễ truy xuất (dưới 2 giây cho bước retrieval). \\
+\hline
+Tính module hóa & NFR4 & Các thành phần của hệ thống phải độc lập, dễ thay thế và mở rộng. \\
+\hline
+Chi phí & NFR5 & Hệ thống phải có thể chạy hoàn toàn cục bộ (local) mà không cần dịch vụ cloud trả phí. \\
+\hline
+Khả dụng & NFR6 & Hệ thống phải hoạt động ổn định trên Windows và Linux. \\
+\hline
+Bảo mật & NFR7 & Dữ liệu phải được lưu trữ cục bộ, không gửi ra bên ngoài khi sử dụng chế độ offline. \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Cấu trúc báo cáo}
+\label{subsec:report_structure}
+
+Chương đầu tiên giới thiệu tổng quan về đề tài, bao gồm bối cảnh nghiên cứu, mục tiêu cần đạt được, phạm vi thực hiện và phân tích yêu cầu hệ thống. Hai chương tiếp theo tập trung vào nền tảng kỹ thuật của hệ thống. Chương 2 trình bày cơ sở lý thuyết bao gồm các khái niệm về nhận dạng giọng nói tự động, mô hình ngôn ngữ lớn, kiến trúc Retrieval-Augmented Generation, cơ sở dữ liệu vector, và các nghiên cứu liên quan trong lĩnh vực này. Chương 3 mô tả chi tiết các công nghệ, thư viện và framework được lựa chọn để xây dựng hệ thống, kèm theo lý do lựa chọn dựa trên các tiêu chí về hiệu năng, hỗ trợ tiếng Việt và khả năng triển khai cục bộ.
+
+Phần thiết kế và triển khai được trình bày trong Chương 4 và Chương 5. Chương 4 đi sâu vào thiết kế hệ thống với kiến trúc tổng thể, thiết kế từng module, luồng dữ liệu xuyên suốt hệ thống và cấu trúc cơ sở dữ liệu. Chương 5 mô tả quá trình triển khai thực tế của từng thành phần, các quyết định kỹ thuật quan trọng và cách tích hợp các module với nhau.
+
+Báo cáo kết thúc với hai chương đánh giá và tổng kết. Chương 6 trình bày kết quả kiểm thử bao gồm unit test, integration test và đánh giá hiệu năng thực tế của hệ thống. Chương 7 tổng kết toàn bộ kết quả, phân tích những hạn chế còn tồn tại, đề xuất hướng phát triển trong tương lai và trình bày kế hoạch thực hiện cho giai đoạn tiếp theo của đề tài.
+
+\newpage
