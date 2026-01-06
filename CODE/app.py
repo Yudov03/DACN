@@ -451,16 +451,18 @@ def main():
                 st.markdown(msg["content"])
 
                 # Show sources
-                # TODO: Implement timestamp display for audio/video sources (Chapter 4 design)
-                # - Display start_time_formatted and end_time_formatted from source metadata
-                # - Consider adding Source Player component for audio/video playback at specific timestamp
                 if msg.get("sources"):
                     with st.expander("📚 Nguồn tham khảo", expanded=False):
                         for src in msg["sources"]:
                             similarity = src.get("similarity", 0)
                             text_preview = src.get("text", "")[:150]
-                            # TODO: Add timestamp info: src.get("start_time_formatted"), src.get("end_time_formatted")
-                            st.markdown(f"- **[{similarity:.0%}]** {text_preview}...")
+
+                            # Display timestamp for audio/video sources
+                            timestamp_str = ""
+                            if src.get("start_time_formatted") and src.get("end_time_formatted"):
+                                timestamp_str = f" **[{src['start_time_formatted']} - {src['end_time_formatted']}]**"
+
+                            st.markdown(f"- **[{similarity:.0%}]**{timestamp_str} {text_preview}...")
 
                 # TTS - simple: click button -> show audio directly
                 if st.button("🔊 Nghe", key=f"tts_{i}"):
@@ -552,14 +554,18 @@ def main():
                 st.markdown(answer)
 
                 # Show sources
-                # TODO: Implement timestamp display for audio/video sources (Chapter 4 design)
                 if results:
                     with st.expander("📚 Nguồn tham khảo", expanded=False):
                         for src in results[:3]:
                             similarity = src.get("similarity", 0)
                             text_preview = src.get("text", "")[:150]
-                            # TODO: Add timestamp info for audio/video sources
-                            st.markdown(f"- **[{similarity:.0%}]** {text_preview}...")
+
+                            # Display timestamp for audio/video sources
+                            timestamp_str = ""
+                            if src.get("start_time_formatted") and src.get("end_time_formatted"):
+                                timestamp_str = f" **[{src['start_time_formatted']} - {src['end_time_formatted']}]**"
+
+                            st.markdown(f"- **[{similarity:.0%}]**{timestamp_str} {text_preview}...")
 
                 # Auto-play TTS for voice queries (if enabled)
                 if query_source == "voice" and st.session_state.auto_tts:

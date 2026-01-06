@@ -389,13 +389,16 @@ def reindex_documents(
 
     # ===== STEP 6: Save updated index.json =====
     print("\n--- Step 6: Save Index ---")
+    # Calculate total chunks from ALL documents in registry, not just processed ones
+    all_chunks = sum(doc.get("chunk_count", 0) for doc in doc_registry.values())
+
     index_data = {
         "version": "1.0",
         "updated_at": datetime.now().isoformat(),
         "documents": doc_registry,
         "stats": {
             "total_documents": len(doc_registry),
-            "total_chunks": total_chunks,
+            "total_chunks": all_chunks,
         }
     }
 

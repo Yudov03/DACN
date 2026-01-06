@@ -128,10 +128,49 @@ def find_doc_by_hash(registry: dict, file_hash: str) -> str:
     return None
 
 
+def sanitize_text(text: str) -> str:
+    """
+    Remove invalid Unicode characters (surrogates) that can't be encoded to UTF-8.
+
+    Some PDF tools create invalid surrogate pairs in text layer.
+    This sanitizes the text to make it JSON-serializable.
+    """
+    if not text:
+        return text
+
+    # Replace surrogate characters with replacement character
+    return text.encode('utf-8', errors='replace').decode('utf-8')
+
+
+def sanitize_dict(data):
+    """
+    Recursively sanitize all strings in a dictionary/list structure.
+
+    Removes invalid Unicode surrogates from all string values.
+    Handles nested dicts, lists, and other types.
+
+    Args:
+        data: Dict, list, string, or other value to sanitize
+
+    Returns:
+        Sanitized data structure with same shape
+    """
+    if isinstance(data, dict):
+        return {k: sanitize_dict(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [sanitize_dict(item) for item in data]
+    elif isinstance(data, str):
+        return sanitize_text(data)
+    else:
+        # Numbers, booleans, None, etc. pass through unchanged
+        return data
+
+
 def process_resources(
     dry_run: bool = False,
     clear_first: bool = False,
-    skip_existing: bool = False
+    skip_existing: bool = False,
+    single_file: str = None
 ):
     """Process all resources from data/resource/ and save RAW content to processed/*.json"""
 
@@ -188,28 +227,50 @@ def process_resources(
         log(f"Existing registry: {len(registry)} documents", "INFO")
 
     # Scan files
-    log(f"Scanning: {resource_dir}", "WAIT")
-    files = scan_resources(resource_dir)
+    if single_file:
+        # Process single file
+        file_path = resource_dir / single_file
+        if not file_path.exists():
+            # Try in documents subdirectory
+            file_path = resource_dir / "documents" / single_file
 
-    if not files:
-        log("No supported files found in data/resource/", "ERROR")
-        log("Please add documents/audio to:", "INFO")
-        print(f"  - {resource_dir / 'documents'}")
-        print(f"  - {resource_dir / 'audio'}")
-        return
+        if not file_path.exists():
+            log(f"File not found: {single_file}", "ERROR")
+            log(f"Searched in: {resource_dir}", "INFO")
+            log(f"Searched in: {resource_dir / 'documents'}", "INFO")
+            return
 
-    # Categorize files
-    docs = [f for f in files if f.suffix.lower() in DOCUMENT_EXTENSIONS]
-    audios = [f for f in files if f.suffix.lower() in AUDIO_EXTENSIONS]
-    videos = [f for f in files if f.suffix.lower() in VIDEO_EXTENSIONS]
+        if file_path.suffix.lower() not in ALL_SUPPORTED_EXTENSIONS:
+            log(f"Unsupported file type: {file_path.suffix}", "ERROR")
+            return
 
-    log(f"Found {len(files)} files:", "OK")
-    print(f"  - Documents: {len(docs)}")
-    print(f"  - Audio: {len(audios)}")
-    print(f"  - Video: {len(videos)}")
+        files = [file_path]
+        log(f"Processing single file: {single_file}", "INFO")
+        ordered_files = files
+    else:
+        # Scan all files
+        log(f"Scanning: {resource_dir}", "WAIT")
+        files = scan_resources(resource_dir)
 
-    # Order: Documents first (lighter), then Media (heavier)
-    ordered_files = docs + videos + audios
+        if not files:
+            log("No supported files found in data/resource/", "ERROR")
+            log("Please add documents/audio to:", "INFO")
+            print(f"  - {resource_dir / 'documents'}")
+            print(f"  - {resource_dir / 'audio'}")
+            return
+
+        # Categorize files
+        docs = [f for f in files if f.suffix.lower() in DOCUMENT_EXTENSIONS]
+        audios = [f for f in files if f.suffix.lower() in AUDIO_EXTENSIONS]
+        videos = [f for f in files if f.suffix.lower() in VIDEO_EXTENSIONS]
+
+        log(f"Found {len(files)} files:", "OK")
+        print(f"  - Documents: {len(docs)}")
+        print(f"  - Audio: {len(audios)}")
+        print(f"  - Video: {len(videos)}")
+
+        # Order: Documents first (lighter), then Media (heavier)
+        ordered_files = docs + videos + audios
 
     # Check for existing files if skip_existing
     files_to_process = []
@@ -293,7 +354,7 @@ def process_resources(
             processed_path = processed_dir / f"{doc_id}.json"
 
             processed_data = {
-                "content": processed.content,  # RAW content, post-process later
+                "content": processed.content,  # RAW content, will be sanitized
                 "file_type": file_type,
                 "extraction_type": processed.extraction_type,
                 "metadata": processed.metadata.to_dict() if hasattr(processed.metadata, 'to_dict') else {},
@@ -301,6 +362,10 @@ def process_resources(
                 "processed_at": datetime.now().isoformat(),
                 "processing_time": process_time,
             }
+
+            # Sanitize entire dict to remove invalid Unicode surrogates
+            # This handles content, metadata, and any nested string fields
+            processed_data = sanitize_dict(processed_data)
 
             with open(processed_path, 'w', encoding='utf-8') as f:
                 json.dump(processed_data, f, ensure_ascii=False, indent=2)
@@ -423,13 +488,19 @@ def main():
         action="store_true",
         help="Skip files that are already processed"
     )
+    parser.add_argument(
+        "--file",
+        type=str,
+        help="Process only this file (filename in data/resource/ or data/resource/documents/)"
+    )
 
     args = parser.parse_args()
 
     process_resources(
         dry_run=args.dry_run,
         clear_first=args.clear,
-        skip_existing=args.skip_existing
+        skip_existing=args.skip_existing,
+        single_file=args.file
     )
 
 

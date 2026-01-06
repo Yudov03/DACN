@@ -91,7 +91,20 @@ class PDFProcessor(BaseProcessor):
         self.extract_tables_enabled = self.config.get("extract_tables", True)
         self.ocr_language = self.config.get("ocr_language", os.getenv("OCR_LANGUAGE", "vi"))
         self.ocr_dpi = self.config.get("ocr_dpi", int(os.getenv("OCR_DPI", "400")))
-        self.min_text_length = self.config.get("min_text_length", 50)
+
+        # Text detection settings (improved thresholds)
+        self.min_text_length = self.config.get(
+            "min_text_length",
+            int(os.getenv("PDF_MIN_TEXT_LENGTH", "100"))
+        )
+        self.min_text_density = self.config.get(
+            "min_text_density",
+            float(os.getenv("PDF_MIN_TEXT_DENSITY", "1.0"))
+        )
+        self.text_quality_threshold = self.config.get(
+            "text_quality_threshold",
+            float(os.getenv("PDF_TEXT_QUALITY_THRESHOLD", "0.7"))
+        )
 
         # Hybrid mode settings
         self.hybrid_mode = self.config.get(
@@ -101,6 +114,18 @@ class PDFProcessor(BaseProcessor):
         self.min_image_size = self.config.get(
             "min_image_size",
             int(os.getenv("PDF_MIN_IMAGE_SIZE", "50"))
+        )
+        self.min_content_image_size = self.config.get(
+            "min_content_image_size",
+            int(os.getenv("PDF_MIN_CONTENT_IMAGE_SIZE", "10000"))
+        )
+        self.image_overlap_threshold = self.config.get(
+            "image_overlap_threshold",
+            float(os.getenv("PDF_IMAGE_OVERLAP_THRESHOLD", "0.3"))
+        )
+        self.ocr_confidence_threshold = self.config.get(
+            "ocr_confidence_threshold",
+            float(os.getenv("PDF_OCR_CONFIDENCE_THRESHOLD", "0.7"))
         )
 
         self._ocr_engine = None
@@ -205,6 +230,108 @@ class PDFProcessor(BaseProcessor):
     # Hybrid Processing Methods
     # =========================================================================
 
+    def _has_meaningful_text(self, page, text: str) -> bool:
+        """
+        Check if page has meaningful text content.
+
+        Args:
+            page: PyMuPDF page object
+            text: Extracted text
+
+        Returns:
+            True if page has meaningful text (not just header/footer/artifacts)
+        """
+        import re
+
+        text_len = len(text.strip())
+
+        # Too short → likely just header/footer
+        if text_len < self.min_text_length:
+            return False
+
+        # Check density (chars per page area in square inches)
+        page_rect = page.rect
+        page_area = (page_rect.width * page_rect.height) / (72 * 72)  # Convert to square inches
+        density = text_len / max(page_area, 1)
+
+        # Low density → likely scan with some OCR artifacts
+        if density < self.min_text_density:
+            return False
+
+        # Check text quality (ratio of valid chars vs total)
+        valid_chars = len(re.findall(r'[\w\s]', text, re.UNICODE))
+        quality_ratio = valid_chars / max(text_len, 1)
+
+        # Too many garbage chars → OCR artifacts
+        if quality_ratio < self.text_quality_threshold:
+            return False
+
+        return True
+
+    def _classify_image(self, img: dict, page_rect, text_blocks: List[dict]) -> str:
+        """
+        Classify image type.
+
+        Args:
+            img: Image dict with bbox, width, height
+            page_rect: Page rectangle
+            text_blocks: List of text blocks
+
+        Returns:
+            - "logo": Small, in header/footer area
+            - "decoration": Background, low contrast with text
+            - "icon": Very small, inline with text
+            - "content": Chart, diagram, screenshot (NEED OCR)
+        """
+        bbox = img["bbox"]
+        width, height = img["width"], img["height"]
+
+        # Calculate position
+        x0, y0, x1, y1 = bbox
+        page_h = page_rect.height
+
+        # Header/Footer detection (top 10% or bottom 10%)
+        is_header = y0 < page_h * 0.1
+        is_footer = y1 > page_h * 0.9
+
+        # Size classification
+        area = width * height
+        is_small = area < 5000  # pixels
+        is_large = area > 50000
+
+        # FIX 1: Detect full-page background images
+        # If image covers >80% of page area, it's a background decoration
+        page_area = page_rect.width * page_rect.height
+        coverage_ratio = area / max(page_area, 1)
+        if coverage_ratio > 0.8:
+            return "decoration"
+
+        # Position relative to text
+        overlaps_text = any(
+            self._bbox_overlap_ratio(bbox, tb["bbox"]) > 0.3
+            for tb in text_blocks
+        )
+
+        # Classification logic
+        if is_small and (is_header or is_footer):
+            return "logo"
+
+        if is_small and overlaps_text:
+            return "icon"
+
+        if overlaps_text and not is_large:
+            return "decoration"
+
+        # Large image not overlapping text → likely meaningful content
+        if is_large and not overlaps_text:
+            return "content"
+
+        # Medium size in main area
+        if not (is_header or is_footer) and area > self.min_content_image_size:
+            return "content"
+
+        return "decoration"
+
     def _analyze_page(self, page) -> PageContent:
         """
         Analyze page to determine content type.
@@ -255,21 +382,40 @@ class PDFProcessor(BaseProcessor):
         except Exception:
             drawing_count = 0
 
-        # Classify page type
-        has_text = len(total_text.strip()) >= self.min_text_length
-        has_significant_images = any(
-            img["width"] >= self.min_image_size and img["height"] >= self.min_image_size
-            for img in image_blocks
-        )
+        # Classify page type using improved logic
+        has_text = self._has_meaningful_text(page, total_text)
 
-        if has_text and not has_significant_images:
-            page_type = "text"
-        elif not has_text and (has_significant_images or drawing_count > 20):
-            page_type = "scan"
-        elif has_text and has_significant_images:
-            page_type = "mixed"
-        else:
+        # Classify images - only count "content" images
+        content_images = []
+        for img in image_blocks:
+            img_type = self._classify_image(img, page.rect, text_blocks)
+            if img_type == "content":
+                content_images.append(img)
+
+        has_content_images = len(content_images) > 0
+
+        # Decision tree
+        if not has_text and not has_content_images:
             page_type = "empty"
+        elif has_text and not has_content_images:
+            page_type = "text"  # Pure text → Fast path
+        elif not has_text and has_content_images:
+            page_type = "scan"  # Need OCR
+        else:
+            # Both text and content images
+            # Check text coverage to avoid false positives
+            text_area = sum(
+                (tb["bbox"][2] - tb["bbox"][0]) * (tb["bbox"][3] - tb["bbox"][1])
+                for tb in text_blocks
+            )
+            page_area = page.rect.width * page.rect.height
+            text_coverage = text_area / max(page_area, 1)
+
+            # If text covers > 50% of page → mainly text with some diagrams
+            if text_coverage > 0.5:
+                page_type = "text"  # Prefer text extraction
+            else:
+                page_type = "mixed"  # True mixed content
 
         return PageContent(
             text=total_text,
@@ -324,6 +470,15 @@ class PDFProcessor(BaseProcessor):
         """
         import numpy as np
 
+        # FIX 2: PowerPoint detection - trust text layer, skip image OCR
+        # PowerPoint PDFs have reliable text layers with decorative background images
+        if hasattr(self, 'doc') and self.doc:
+            metadata = self.doc.metadata
+            creator = metadata.get("creator", "") if metadata else ""
+            if "PowerPoint" in creator:
+                # PowerPoint has reliable text layer, skip all image OCR for mixed pages
+                return content.text, "direct"
+
         # Collect all content blocks with positions
         all_blocks = []
 
@@ -348,21 +503,26 @@ class PDFProcessor(BaseProcessor):
             if aspect_ratio > 20 or aspect_ratio < 0.05:
                 continue
 
+            # Classify image type - skip non-content images
+            img_type = self._classify_image(img, page.rect, content.text_blocks)
+            if img_type != "content":
+                continue
+
             # Check if image overlaps significantly with text blocks
-            # Skip OCR if text already covers this region
+            # Skip OCR if text already covers this region (using improved threshold)
             img_bbox = img["bbox"]
             overlaps_text = False
             for tb in content.text_blocks:
-                if self._bbox_overlap_ratio(img_bbox, tb["bbox"]) > 0.5:
+                if self._bbox_overlap_ratio(img_bbox, tb["bbox"]) > self.image_overlap_threshold:
                     overlaps_text = True
                     break
 
             if overlaps_text:
                 continue
 
-            # OCR the image region
-            ocr_text = self._ocr_image_region(page, img["bbox"])
-            if ocr_text and ocr_text.strip():
+            # OCR the image region with confidence check
+            ocr_text, confidence = self._ocr_image_region_with_confidence(page, img["bbox"])
+            if ocr_text and ocr_text.strip() and confidence >= self.ocr_confidence_threshold:
                 all_blocks.append({
                     "type": "ocr",
                     "bbox": img["bbox"],
@@ -402,9 +562,14 @@ class PDFProcessor(BaseProcessor):
             return 0.0
 
         intersection = (x_right - x_left) * (y_bottom - y_top)
-        area1 = (x2_1 - x1_1) * (y2_1 - y1_1)
+        area1 = (x2_1 - x1_1) * (y2_1 - y1_1)  # Image area
+        area2 = (x2_2 - x1_2) * (y2_2 - y1_2)  # Text block area
 
-        return intersection / max(area1, 1)
+        # FIX 3: Use smaller area for overlap calculation
+        # This detects when small text overlaps with large backgrounds
+        # Prevents false negatives where text on background shows tiny overlap ratio
+        smaller_area = min(area1, area2)
+        return intersection / max(smaller_area, 1)
 
     def _ocr_image_region(self, page, bbox: Tuple[float, float, float, float]) -> str:
         """
@@ -444,6 +609,36 @@ class PDFProcessor(BaseProcessor):
         except Exception as e:
             print(f"OCR region error: {e}")
             return ""
+
+    def _ocr_image_region_with_confidence(self, page, bbox: Tuple[float, float, float, float]) -> Tuple[str, float]:
+        """
+        OCR image region and return confidence score.
+
+        Args:
+            page: PyMuPDF page object
+            bbox: Bounding box (x0, y0, x1, y1)
+
+        Returns:
+            (text, confidence) where confidence is 0.0-1.0
+        """
+        import re
+
+        ocr_text = self._ocr_image_region(page, bbox)
+
+        # Calculate confidence based on text quality
+        if not ocr_text or not ocr_text.strip():
+            return "", 0.0
+
+        # Check ratio of valid characters
+        total_chars = len(ocr_text)
+        valid_chars = len(re.findall(r'[\w\s]', ocr_text, re.UNICODE))
+        confidence = valid_chars / max(total_chars, 1)
+
+        # Penalize very short results
+        if total_chars < 10:
+            confidence *= 0.5
+
+        return ocr_text, confidence
 
     # =========================================================================
     # Legacy Processing (fallback)
